@@ -93,6 +93,9 @@ class NavOnlineXmlBuilder
 	/** @var bool */
 	private $foreignCurrency = false;
 
+	/** @var bool Build for the tax authority audit export (X01, options['x01']): private person name and address, OSS rates */
+	private $x01 = false;
+
 	/** @var string customerVatStatus of the last build (DOMESTIC, OTHER, PRIVATE_PERSON) */
 	private $customerVatStatus = '';
 
@@ -137,6 +140,8 @@ class NavOnlineXmlBuilder
 	 * @param Societe|null         $supplier Issuer (defaults to global $mysoc)
 	 * @param array<string,mixed>  $options  Optional overrides (mainly for tests):
 	 *                                       'reference' => array(originalInvoiceNumber, modifyWithoutMaster, modificationIndex, lineNumberOffset)
+	 *                                       'x01' => true: tax authority audit export (adóhatósági ellenőrzési adatszolgáltatás):
+	 *                                       name and address of a private person customer, OSS lines with their foreign rate
 	 *                                       'referenceNav' => array(modifyWithoutMaster, modificationIndex, lineNumberOffset) from the NAV
 	 *                                       invoice chain, replacing these values of the reference loaded from the database
 	 *                                       'advanceData' => array(fk_remise_except => array(advanceOriginalInvoice, advancePaymentDate, advanceExchangeRate))
@@ -148,6 +153,7 @@ class NavOnlineXmlBuilder
 
 		$this->errors = array();
 		$this->warnings = array();
+		$this->x01 = !empty($options['x01']);
 		$supplier = $supplier ? $supplier : $mysoc;
 		$type = (int) $invoice->type;
 
@@ -298,6 +304,12 @@ class NavOnlineXmlBuilder
 		if (isset($soc->typent_code) && $soc->typent_code === 'TE_PRIVATE') {
 			$this->customerVatStatus = 'PRIVATE_PERSON';
 			$this->add($x, 'customerVatStatus', 'PRIVATE_PERSON');
+			// Tax authority audit export (X01): the name and address of a private person customer must be in it (NAV:
+			// "az adatszolgáltatásban nem szerepelhet, az adatexportban viszont szerepelnie kell"); not in the online report
+			if ($this->x01) {
+				$this->add($x, 'customerName', $this->text($soc->name, 512), 'Customer: name is empty');
+				$this->buildAddress($x->addChild('customerAddress'), $soc, 'Customer');
+			}
 			return;
 		}
 
@@ -593,6 +605,13 @@ class NavOnlineXmlBuilder
 			// 23% (PTU-PL) would be reported as a non-existent Hungarian rate, so the invoice is stopped until the
 			// NAV reporting rule of OSS supplies is decided.
 			$srcCode = strtoupper(trim((string) (isset($line->vat_src_code) ? $line->vat_src_code : '')));
+			if ((!in_array(round($rate, 2), array(27.0, 18.0, 5.0), true) || preg_match('/-[A-Z]{2}$/', $srcCode)) && $this->x01) {
+				// Audit export (X01) of an OSS invoice: the line with the VAT rate of the other member state, as invoiced
+				// (valid in invoiceData.xsd); never sent to NAV
+				$value = $this->rate($rate / 100);
+				$this->warnings[] = 'WARN LOCAL_OSS_RATE: '.$label.': foreign (OSS) VAT rate '.round($rate, 2).'%'.($srcCode !== '' ? ' ('.$srcCode.')' : '');
+				return array('type' => 'vatPercentage', 'key' => '9_'.str_pad($value, 8, '0', STR_PAD_LEFT).'_'.$srcCode, 'value' => $value);
+			}
 			if (!in_array(round($rate, 2), array(27.0, 18.0, 5.0), true) || preg_match('/-[A-Z]{2}$/', $srcCode)) {
 				$this->errors[] = $label.': VAT rate '.round($rate, 2).'%'.($srcCode !== '' ? ' ('.$srcCode.')' : '').' is not a Hungarian VAT rate (OSS / foreign VAT): OSS lines are not reported to NAV (quarterly OSS return), an invoice with them is never sent';
 				return array('type' => 'vatPercentage', 'key' => '9_x', 'value' => '0');

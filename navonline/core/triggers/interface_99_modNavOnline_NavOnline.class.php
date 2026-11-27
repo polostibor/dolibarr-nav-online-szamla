@@ -127,6 +127,7 @@ class InterfaceNavOnline extends DolibarrTriggers
 				$ret = $this->billValidate($object, $user, $conf);
 				if ($ret >= 0) {
 					$this->closeZeroFinalInvoice($object, $user);
+					$this->auditSnapshot($object, $user);
 				}
 				return $ret;
 			case 'BILL_UNVALIDATE':
@@ -287,6 +288,34 @@ class InterfaceNavOnline extends DolibarrTriggers
 			dol_syslog(__METHOD__.' credit note '.$cn->ref.' ('.$credit.') used on '.$src->ref.', left to pay '.$left);
 		}
 		return $applied;
+	}
+
+	/**
+	 * Data at issue for the tax authority audit export (adóhatósági ellenőrzési adatszolgáltatás): snapshot of the
+	 * invoice at the end of its validation, when everything set here (teljesítés dátuma, rate, deposit deductions) is
+	 * in the database. Never blocks the validation: an incomplete snapshot is stored with its errors (shown by the
+	 * export), a database error is only logged. Only for a Hungarian issuer.
+	 *
+	 * @param Facture $object Invoice being validated
+	 * @param User    $user   User
+	 * @return void
+	 */
+	private function auditSnapshot($object, $user)
+	{
+		global $mysoc;
+
+		if (!$this->isCustomerInvoice($object) || empty($mysoc->country_code) || $mysoc->country_code !== 'HU' || (int) $object->type === Facture::TYPE_PROFORMA) {
+			return;
+		}
+		dol_include_once('/navonline/class/navonlinex01.class.php');
+		try {
+			$x = new NavOnlineX01($this->db);
+			if ($x->snapshot((int) $object->id, 'validation', $user) < 0) {
+				$this->softFail('audit export snapshot failed: '.implode('; ', $x->errors));
+			}
+		} catch (Throwable $e) {
+			$this->softFail('audit export snapshot failed: '.$e->getMessage());
+		}
 	}
 
 	/**
