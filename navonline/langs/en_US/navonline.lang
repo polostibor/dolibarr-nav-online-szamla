@@ -346,3 +346,5 @@ NavOnlineSupplierCreditNotApplied = Supplier credit note %s (%s HUF) is larger t
 NavOnlineBankImportMenu = Bank statement import
 # Menü: a vevői számlák alatti fizetések / customer invoice payments menu
 NavOnlineCustomerPaymentsMenu = Payments received
+NavOnlineBankAccountsListMenu = List of accounts
+NavOnlineBankAccountsListTitle = Bank and cash accounts

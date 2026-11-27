@@ -69,3 +69,21 @@ INSERT INTO llx_overwrite_trans (entity, lang, transkey, transvalue) VALUES (__E
 INSERT INTO llx_overwrite_trans (entity, lang, transkey, transvalue) VALUES (__ENTITY__, 'hu_HU', 'Module59000Name', 'Árrés');
 INSERT INTO llx_overwrite_trans (entity, lang, transkey, transvalue) VALUES (__ENTITY__, 'hu_HU', 'ShowMarginInfos', 'Árrés-információk megjelenítése');
 INSERT INTO llx_overwrite_trans (entity, lang, transkey, transvalue) VALUES (__ENTITY__, 'hu_HU', 'margesSetup', 'Az árréskezelés beállítása');
+
+-- Raktár: „Utánrendelés” (a „Feltöltés” helyett: készletpótlás), „Nyitott beszerzési rendelések” (a „Megrendelések pótlásra” helyett)
+INSERT INTO llx_overwrite_trans (entity, lang, transkey, transvalue) VALUES (__ENTITY__, 'hu_HU', 'Replenishment', 'Utánrendelés');
+INSERT INTO llx_overwrite_trans (entity, lang, transkey, transvalue) VALUES (__ENTITY__, 'hu_HU', 'ReplenishmentOrders', 'Nyitott beszerzési rendelések');
+
+-- Bank menü: „Bank és pénztár”, „Számlamozgások”, „Átvezetés saját számlák között”, „Nyitóegyenleg” (a „Kezdeti mérleg” helyett), „Bankszámla” (a „Fiók” helyett)
+INSERT INTO llx_overwrite_trans (entity, lang, transkey, transvalue) VALUES (__ENTITY__, 'hu_HU', 'BankTransactionByCategories', 'Tranzakciók kategóriák szerint');
+INSERT INTO llx_overwrite_trans (entity, lang, transkey, transvalue) VALUES (__ENTITY__, 'hu_HU', 'BankTransactionForCategory', 'Tranzakciók a(z) <b>%s</b> kategóriában');
+INSERT INTO llx_overwrite_trans (entity, lang, transkey, transvalue) VALUES (__ENTITY__, 'hu_HU', 'BankTransactions', 'Tranzakciók');
+INSERT INTO llx_overwrite_trans (entity, lang, transkey, transvalue) VALUES (__ENTITY__, 'hu_HU', 'FinancialAccount', 'Bankszámla');
+INSERT INTO llx_overwrite_trans (entity, lang, transkey, transvalue) VALUES (__ENTITY__, 'hu_HU', 'InitialBankBalance', 'Nyitóegyenleg');
+INSERT INTO llx_overwrite_trans (entity, lang, transkey, transvalue) VALUES (__ENTITY__, 'hu_HU', 'ListTransactions', 'Számlamozgások');
+INSERT INTO llx_overwrite_trans (entity, lang, transkey, transvalue) VALUES (__ENTITY__, 'hu_HU', 'ListTransactionsByCategory', 'Tételek kategóriánként');
+INSERT INTO llx_overwrite_trans (entity, lang, transkey, transvalue) VALUES (__ENTITY__, 'hu_HU', 'MenuBankCash', 'Bank és pénztár');
+INSERT INTO llx_overwrite_trans (entity, lang, transkey, transvalue) VALUES (__ENTITY__, 'hu_HU', 'MenuBankInternalTransfer', 'Átvezetés saját számlák között');
+INSERT INTO llx_overwrite_trans (entity, lang, transkey, transvalue) VALUES (__ENTITY__, 'hu_HU', 'MenuNewFinancialAccount', 'Új bankszámla / pénztár');
+INSERT INTO llx_overwrite_trans (entity, lang, transkey, transvalue) VALUES (__ENTITY__, 'hu_HU', 'NewFinancialAccount', 'Új bankszámla / pénztár');
+INSERT INTO llx_overwrite_trans (entity, lang, transkey, transvalue) VALUES (__ENTITY__, 'hu_HU', 'TransferFromToDone', 'Átvezetés rögzítve: <b>%s</b> → <b>%s</b>, <b>%s</b> %s.');

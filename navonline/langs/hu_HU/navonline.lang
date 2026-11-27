@@ -346,3 +346,5 @@ NavOnlineSupplierCreditNotApplied = A(z) %s szállítói jóváírás (%s Ft) na
 NavOnlineBankImportMenu = Bankkivonat importálása
 # Menü: a vevői számlák alatti fizetések / customer invoice payments menu
 NavOnlineCustomerPaymentsMenu = Kiegyenlítések
+NavOnlineBankAccountsListMenu = Számlák listája
+NavOnlineBankAccountsListTitle = Pénzforgalmi számlák

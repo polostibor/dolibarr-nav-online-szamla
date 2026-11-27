@@ -198,3 +198,5 @@ NavOnlineSupplierCreditNotApplied = Die Lieferantengutschrift %s (%s HUF) ist h�
 NavOnlineBankImportMenu = Kontoauszug importieren
 # Menü: a vevői számlák alatti fizetések / customer invoice payments menu
 NavOnlineCustomerPaymentsMenu = Zahlungseingänge
+NavOnlineBankAccountsListMenu = Kontenliste
+NavOnlineBankAccountsListTitle = Bank- und Kassenkonten

@@ -286,9 +286,10 @@ class ActionsNavonline
 	}
 
 	/**
-	 * Left menu: the "Payments" entry under the customer invoices is named "Kiegyenlítések" (a customer invoice is
-	 * settled, not paid out). The core uses the same "Payments" key for supplier invoices, salaries, taxes..., which
-	 * keep it; so only this entry (leftmenu customers_bills_payment) is renamed here, without a core change.
+	 * Left menu entries whose core label is a generic key shared by many menus, renamed here only (no core change):
+	 *  - "Payments" under the customer invoices -> "Kiegyenlítések" (a customer invoice is settled, not paid out; the
+	 *    supplier invoices, salaries, taxes... keep "Kifizetések");
+	 *  - "List" under Bank (list of the bank and cash accounts) -> "Számlák listája".
 	 *
 	 * @param array<string,mixed>            $parameters  mainmenu
 	 * @param array<int,array<string,mixed>> $object      Menu entries (eldy left menu)
@@ -305,9 +306,18 @@ class ActionsNavonline
 		}
 		$changed = false;
 		foreach ($object as $k => $it) {
-			if (is_array($it) && ($it['leftmenu'] ?? '') === 'customers_bills_payment' && (int) ($it['level'] ?? -1) === 1) {
+			if (!is_array($it) || (int) ($it['level'] ?? -1) !== 1) {
+				continue;
+			}
+			$new = '';
+			if (($it['leftmenu'] ?? '') === 'customers_bills_payment') {
+				$new = 'NavOnlineCustomerPaymentsMenu';
+			} elseif (($it['leftmenu'] ?? '') === 'bank' && strpos((string) ($it['url'] ?? ''), '/compta/bank/list.php') === 0 && $it['titre'] === $langs->trans('List')) {
+				$new = 'NavOnlineBankAccountsListMenu';
+			}
+			if ($new !== '') {
 				$langs->load('navonline@navonline');
-				$object[$k]['titre'] = $langs->trans('NavOnlineCustomerPaymentsMenu');
+				$object[$k]['titre'] = $langs->trans($new);
 				$changed = true;
 			}
 		}
@@ -438,6 +448,23 @@ jQuery(function ($) {
 </script>
 JS;
 			print "\n".str_replace('NAVHINT', json_encode($langs->trans('NavOnlineInvoiceDateIsValidation')), $js)."\n";
+		}
+
+		// List of the bank and cash accounts (Bank > Számlák listája): page title "Pénzforgalmi számlák". The core title key
+		// BankAccounts is also the title of the bank accounts of third parties and users, which keep it; this page has
+		// no hook for its title, so it is replaced in the page (title and browser tab) only here.
+		if (empty($GLOBALS['navonline_banklist_title']) && preg_match('#/compta/bank/list\.php$#', (string) ($_SERVER['PHP_SELF'] ?? ''))) {
+			$GLOBALS['navonline_banklist_title'] = 1;
+			$langs->load('navonline@navonline');
+			$from = $langs->transnoentitiesnoconv('BankAccounts');
+			$to = $langs->transnoentitiesnoconv('NavOnlineBankAccountsListTitle');
+			if ($to !== $from && $to !== 'NavOnlineBankAccountsListTitle') {
+				print "\n<!-- NavOnline: title of the bank account list -->\n<script>\njQuery(function ($) {\n";
+				print "\tvar from = ".json_encode($from).", to = ".json_encode($to).";\n";
+				print "\t$('.titre .print-barre-liste').each(function () { if ($.trim($(this).text()) === from) { $(this).text(to); } });\n";
+				print "\tif (document.title.indexOf(from) === 0) { document.title = to + document.title.substring(from.length); }\n";
+				print "});\n</script>\n";
+			}
 		}
 
 		if (!in_array('thirdpartycard', $contexts, true)) {
