@@ -73,11 +73,17 @@ $opLabel = function ($op) {
 if ($action === 'sync' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 	$r = $in->sync(dol_print_date($dateFrom, '%Y-%m-%d'), dol_print_date($dateTo, '%Y-%m-%d'));
 	if (is_array($r)) {
-		setEventMessages('NAV-lekérdezés kész: '.$r['found'].' számla, ebből '.$r['new'].' új', null, 'mesgs');
+		setEventMessages('NAV-lekérdezés kész: '.$r['found'].' számla, ebből '.$r['new'].' új'.(!empty($r['changed']) ? ', '.$r['changed'].' megváltozott a NAV-nál' : ''), null, 'mesgs');
 	} else {
 		setEventMessages('NAV-lekérdezés sikertelen', $in->errors, 'errors');
 	}
 	header('Location: '.$self.'?status=0');
+	exit;
+}
+// The NAV data of a recorded invoice changed (new report by the supplier): the user checked the supplier invoice
+if ($action === 'navchecked' && $id > 0 && $_SERVER['REQUEST_METHOD'] === 'POST' && $canRecord) {
+	$db->query('UPDATE '.$db->prefix().'navonline_inbound SET nav_changed = 0 WHERE rowid = '.((int) $id).' AND entity = '.((int) $conf->entity));
+	header('Location: '.$self.'?status='.urlencode($status));
 	exit;
 }
 if (in_array($action, array('ignore', 'restore'), true) && $id > 0 && $_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -380,13 +386,20 @@ while ($resql && ($o = $db->fetch_object($resql))) {
 		}
 	}
 	print '</td><td class="nowraponall">'.dol_escape_htmltag($o->invoice_number).'</td>';
-	print '<td>'.dol_escape_htmltag($opLabel($o->operation)).($o->original_invoice_number ? ' <span class="opacitymedium" title="Eredeti számla">('.dol_escape_htmltag($o->original_invoice_number).')</span>' : '').'</td>';
+	print '<td>'.dol_escape_htmltag($opLabel($o->operation)).($o->original_invoice_number ? ' <span class="opacitymedium" title="Eredeti számla">('.dol_escape_htmltag($o->original_invoice_number).')</span>' : '');
+	if ((int) $o->batch_index > 0) {
+		print ' <span class="badge badge-status4" title="Kötegelt módosítás: egy bizonylat több számlát módosít, kézzel kell rögzíteni">Köteg '.((int) $o->batch_index).'</span>';
+	}
+	print '</td>';
 	print '<td class="nowraponall">'.dol_escape_htmltag((string) $o->delivery_date).'</td><td class="nowraponall">'.dol_escape_htmltag((string) $o->payment_date).'</td>';
 	print '<td class="right nowraponall">'.price($o->net_amount).'</td><td class="right nowraponall">'.price($o->vat_amount).'</td><td>'.dol_escape_htmltag($o->currency).'</td><td class="nowraponall">';
 	if ($o->fk_facture_fourn) {
 		$ff = new FactureFournisseur($db);
 		if ($ff->fetch($o->fk_facture_fourn) > 0) {
 			print $ff->getNomUrl(1).' '.$ff->getLibStatut(3);
+		}
+		if (!empty($o->nav_changed)) {
+			print '<br><span class="badge badge-status8" title="A szállító a rögzítés után új adatszolgáltatást küldött erről a számláról (pl. technikai érvénytelenítés után javított adattal): vesd össze a szállítói számlát a NAV-adattal">NAV-adat megváltozott</span>';
 		}
 	}
 	print '</td><td class="nowraponall right">';
@@ -395,6 +408,8 @@ while ($resql && ($o = $db->fetch_object($resql))) {
 			print '<a class="butAction smallpaddingimp" href="'.$self.'?action=confirm&id='.((int) $o->rowid).'">Rögzítés</a>';
 		}
 		print '<form method="POST" action="'.$self.'" class="inline-block"><input type="hidden" name="token" value="'.newToken().'"><input type="hidden" name="action" value="ignore"><input type="hidden" name="status" value="'.dol_escape_htmltag($status).'"><input type="hidden" name="id" value="'.((int) $o->rowid).'"><input type="submit" class="butActionDelete smallpaddingimp" value="Kihagyás" title="Nem kerül a Dolibarrba (pl. nem nekünk szól)"></form>';
+	} elseif (!empty($o->nav_changed) && $canRecord) {
+		print '<form method="POST" action="'.$self.'" class="inline-block"><input type="hidden" name="token" value="'.newToken().'"><input type="hidden" name="action" value="navchecked"><input type="hidden" name="status" value="'.dol_escape_htmltag($status).'"><input type="hidden" name="id" value="'.((int) $o->rowid).'"><input type="submit" class="butAction smallpaddingimp" value="Ellenőrizve" title="A szállítói számlát összevetettem a NAV-ban szereplő új adattal"></form>';
 	} elseif ((int) $o->status === NavOnlineInbound::STATUS_IGNORED) {
 		print '<form method="POST" action="'.$self.'" class="inline-block"><input type="hidden" name="token" value="'.newToken().'"><input type="hidden" name="action" value="restore"><input type="hidden" name="status" value="'.dol_escape_htmltag($status).'"><input type="hidden" name="id" value="'.((int) $o->rowid).'"><input type="submit" class="butAction smallpaddingimp" value="Visszaállítás"></form>';
 	}

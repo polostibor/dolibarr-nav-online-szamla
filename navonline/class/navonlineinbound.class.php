@@ -79,7 +79,7 @@ class NavOnlineInbound
 	/**
 	 * @return \NavOnlineInvoice\Reporter|null
 	 */
-	private function reporter()
+	protected function reporter()
 	{
 		$c = new NavOnlineClient();
 		$r = $c->getReporter(self::environment());
@@ -97,10 +97,99 @@ class NavOnlineInbound
 	 */
 	public function syncScheduled($days = 10)
 	{
+		global $conf;
+
+		// By processing time at NAV (insDate), from the end of the last successful run: an invoice reported late (manual
+		// invoice, report refused and sent again weeks later, back-dated issue date) or a run missed for days is never
+		// skipped. First run: the last N days. One hour of overlap (the upsert is idempotent).
 		$days = max(1, min(90, (int) $days ?: 10));
-		$res = $this->sync(date('Y-m-d', strtotime('-'.$days.' days')), date('Y-m-d'));
-		$this->output = $res < 0 ? implode('; ', $this->errors) : 'NAV bejövő számlák: '.$res['found'].' találat, '.$res['new'].' új';
-		return $res < 0 ? -1 : 0;
+		$key = self::cursorKey();
+		$now = dol_now();
+		$last = (int) getDolGlobalString($key);
+		$from = $last > 0 ? $last - 3600 : $now - $days * 86400;
+		$res = $this->syncByInsDate($from, $now);
+		if ($res < 0) {
+			$this->output = implode('; ', $this->errors);
+			return -1;
+		}
+		dolibarr_set_const($this->db, $key, (string) $now, 'chaine', 0, 'NavOnline: end of the last inbound sync (insDate)', $conf->entity);
+		$this->output = 'NAV bejövő számlák ('.dol_print_date($from, 'dayhour').' óta beérkezett adatszolgáltatások): '.$res['found'].' találat, '.$res['new'].' új'.($res['changed'] ? ', '.$res['changed'].' megváltozott' : '');
+		return 0;
+	}
+
+	/**
+	 * @return string Constant holding the end of the last insDate sync (timestamp) of the inbound environment
+	 */
+	public static function cursorKey()
+	{
+		return 'NAVONLINE_INBOUND_SYNC_'.strtoupper(self::environment());
+	}
+
+	/**
+	 * Read the inbound invoices processed by NAV in a time range (insDate, UTC) into llx_navonline_inbound.
+	 *
+	 * @param int $from Timestamp
+	 * @param int $to   Timestamp
+	 * @return array{found:int,new:int,changed:int}|int Counters, -1 on error
+	 */
+	public function syncByInsDate($from, $to)
+	{
+		$this->errors = array();
+		if ($from <= 0 || $to <= $from) {
+			$this->errors[] = 'Érvénytelen időszak';
+			return -1;
+		}
+		$r = $this->reporter();
+		if (!$r) {
+			return -1;
+		}
+		$tot = array('found' => 0, 'new' => 0, 'changed' => 0);
+		$span = (self::MAX_RANGE_DAYS - 1) * 86400;	// NAV: at most 35 days per query
+		for ($start = $from; $start < $to; $start += $span) {
+			$end = min($to, $start + $span);
+			$q = array('insDate' => array('dateTimeFrom' => gmdate('Y-m-d\TH:i:s', $start).'.000Z', 'dateTimeTo' => gmdate('Y-m-d\TH:i:s', $end).'.000Z'));
+			$res = $this->fetchDigest($r, $q);
+			if ($res < 0) {
+				return -1;
+			}
+			foreach ($tot as $k => $v) {
+				$tot[$k] = $v + $res[$k];
+			}
+		}
+		return $tot;
+	}
+
+	/**
+	 * All pages of one INBOUND digest query, stored.
+	 *
+	 * @param \NavOnlineInvoice\Reporter $r         Reporter
+	 * @param array<string,mixed>        $mandatory mandatoryQueryParams
+	 * @return array{found:int,new:int,changed:int}|int Counters, -1 on error
+	 */
+	private function fetchDigest($r, $mandatory)
+	{
+		global $conf;
+
+		$env = self::environment();
+		$tot = array('found' => 0, 'new' => 0, 'changed' => 0);
+		$page = 1;
+		do {
+			try {
+				$res = $r->queryInvoiceDigest(array('mandatoryQueryParams' => $mandatory), $page, 'INBOUND');
+			} catch (Exception $e) {
+				$this->errors[] = NavOnlineClient::describeException($e);
+				return -1;
+			}
+			$pages = (int) $res->availablePage;
+			foreach ($res->invoiceDigest as $d) {
+				$tot['found']++;
+				$u = $this->upsertDigest($d, $env, (int) $conf->entity);
+				$tot['new'] += $u === 1 ? 1 : 0;
+				$tot['changed'] += $u === 2 ? 1 : 0;
+			}
+			$page++;
+		} while ($page <= $pages);
+		return $tot;
 	}
 
 	/**
@@ -125,27 +214,18 @@ class NavOnlineInbound
 		if (!$r) {
 			return -1;
 		}
-		$env = self::environment();
-		$found = $new = 0;
+		$tot = array('found' => 0, 'new' => 0, 'changed' => 0);
 		for ($start = $tsFrom; $start <= $tsTo; $start = strtotime('+'.self::MAX_RANGE_DAYS.' days', $start)) {
 			$end = min($tsTo, strtotime('+'.(self::MAX_RANGE_DAYS - 1).' days', $start));
-			$page = 1;
-			do {
-				try {
-					$res = $r->queryInvoiceDigest(array('mandatoryQueryParams' => array('invoiceIssueDate' => array('dateFrom' => date('Y-m-d', $start), 'dateTo' => date('Y-m-d', $end)))), $page, 'INBOUND');
-				} catch (Exception $e) {
-					$this->errors[] = NavOnlineClient::describeException($e);
-					return -1;
-				}
-				$pages = (int) $res->availablePage;
-				foreach ($res->invoiceDigest as $d) {
-					$found++;
-					$new += $this->upsertDigest($d, $env, (int) $conf->entity);
-				}
-				$page++;
-			} while ($page <= $pages);
+			$res = $this->fetchDigest($r, array('invoiceIssueDate' => array('dateFrom' => date('Y-m-d', $start), 'dateTo' => date('Y-m-d', $end))));
+			if ($res < 0) {
+				return -1;
+			}
+			foreach ($tot as $k => $v) {
+				$tot[$k] = $v + $res[$k];
+			}
 		}
-		return array('found' => $found, 'new' => $new);
+		return $tot;
 	}
 
 	/**
@@ -165,7 +245,8 @@ class NavOnlineInbound
 		};
 		$taxid = substr(preg_replace('/\D/', '', (string) $d->supplierTaxNumber), 0, 8);
 		$number = trim((string) $d->invoiceNumber);
-		$where = 'entity = '.$entity." AND environment = '".$this->db->escape($env)."' AND supplier_taxid = '".$this->db->escape($taxid)."' AND invoice_number = '".$this->db->escape($number)."'";
+		$batch = (int) $d->batchIndex;	// item of a batch modification (batchInvoice), 0 otherwise
+		$where = 'entity = '.$entity." AND environment = '".$this->db->escape($env)."' AND supplier_taxid = '".$this->db->escape($taxid)."' AND invoice_number = '".$this->db->escape($number)."' AND batch_index = ".$batch;
 		$fields = array(
 			'supplier_name' => $s($d->supplierName),
 			'operation' => $s($d->invoiceOperation, 8),
@@ -186,18 +267,29 @@ class NavOnlineInbound
 			'ins_date' => trim((string) $d->insDate) === '' ? 'NULL' : "'".$this->db->idate(strtotime((string) $d->insDate))."'",
 			'original_invoice_number' => $s($d->originalInvoiceNumber, 64),
 		);
-		$res = $this->db->query('SELECT rowid FROM '.$this->db->prefix().'navonline_inbound WHERE '.$where);
+		$res = $this->db->query('SELECT rowid, transaction_id, status FROM '.$this->db->prefix().'navonline_inbound WHERE '.$where);
 		$o = $res ? $this->db->fetch_object($res) : null;
 		if ($o) {
 			$set = array();
 			foreach ($fields as $k => $v) {
 				$set[] = $k.' = '.$v;
 			}
+			// Another NAV report of the same invoice (the supplier annulled the previous one technically and sent it
+			// again): the cached invoice data is out of date; a row already recorded is flagged for checking
+			$newTx = trim((string) $d->transactionId);
+			$changed = $newTx !== '' && !empty($o->transaction_id) && $newTx !== (string) $o->transaction_id;
+			if ($changed) {
+				$set[] = 'invoice_xml = NULL';
+				if ((int) $o->status === self::STATUS_RECORDED) {
+					$set[] = 'nav_changed = 1';
+				}
+				dol_syslog(__METHOD__.' inbound '.$number.' ('.$taxid.'): new NAV report '.$newTx.' (was '.$o->transaction_id.'), cached data dropped', LOG_WARNING);
+			}
 			$this->db->query('UPDATE '.$this->db->prefix().'navonline_inbound SET '.implode(', ', $set).' WHERE rowid = '.((int) $o->rowid));
-			return 0;
+			return $changed ? 2 : 0;
 		}
-		$sql = 'INSERT INTO '.$this->db->prefix().'navonline_inbound (entity, environment, invoice_number, supplier_taxid, '.implode(', ', array_keys($fields)).', status, date_creation)';
-		$sql .= ' VALUES ('.$entity.", '".$this->db->escape($env)."', '".$this->db->escape($number)."', '".$this->db->escape($taxid)."', ".implode(', ', $fields).', 0, \''.$this->db->idate(dol_now()).'\')';
+		$sql = 'INSERT INTO '.$this->db->prefix().'navonline_inbound (entity, environment, invoice_number, batch_index, supplier_taxid, '.implode(', ', array_keys($fields)).', status, date_creation)';
+		$sql .= ' VALUES ('.$entity.", '".$this->db->escape($env)."', '".$this->db->escape($number)."', ".$batch.", '".$this->db->escape($taxid)."', ".implode(', ', $fields).', 0, \''.$this->db->idate(dol_now()).'\')';
 		return $this->db->query($sql) ? 1 : 0;
 	}
 
@@ -220,6 +312,11 @@ class NavOnlineInbound
 	 */
 	public function getInvoiceData($row)
 	{
+		// Batch modification (one document modifying several invoices, batchInvoice): not recorded by the module
+		if ((int) ($row->batch_index ?? 0) > 0) {
+			$this->errors[] = 'Kötegelt módosítás ('.$row->invoice_number.', '.((int) $row->batch_index).'. tétel, eredeti számla: '.($row->original_invoice_number ?: '?').'): egy bizonylat több számlát módosít, ezt a modul nem rögzíti automatikusan. Kézzel rögzítsd a módosított számlák alapján, majd jelöld „Kihagyás”-sal.';
+			return null;
+		}
 		if (empty($row->invoice_xml)) {
 			$r = $this->reporter();
 			if (!$r) {
@@ -238,7 +335,13 @@ class NavOnlineInbound
 			$row->invoice_xml = $xml->asXML();
 			$this->db->query('UPDATE '.$this->db->prefix()."navonline_inbound SET invoice_xml = '".$this->db->escape($row->invoice_xml)."' WHERE rowid = ".((int) $row->rowid));
 		}
-		return self::parse($row->invoice_xml);
+		$parsed = self::parse($row->invoice_xml);
+		if (!$parsed && strpos((string) $row->invoice_xml, 'batchInvoice') !== false) {
+			$this->errors[] = 'Kötegelt módosítás ('.$row->invoice_number.'): egy bizonylat több számlát módosít, ezt a modul nem rögzíti automatikusan. Kézzel rögzítsd, majd jelöld „Kihagyás”-sal.';
+		} elseif (!$parsed) {
+			$this->errors[] = 'A NAV-tól kapott számlaadat nem dolgozható fel';
+		}
+		return $parsed;
 	}
 
 	/**

@@ -145,7 +145,8 @@ class modNavOnline extends DolibarrModules
 				'test' => 'isModEnabled("navonline") && isModEnabled("multicurrency")',
 				'priority' => 40,
 			),
-			// Inbound (supplier) invoices from NAV: daily list refresh of the last 10 days (read-only, records nothing)
+			// Inbound (supplier) invoices from NAV: daily list refresh of the invoices processed by NAV since the last run
+			// (insDate; first run: the last 10 days), read-only, records nothing
 			2 => array(
 				'label' => 'NavOnlineInboundSync',
 				'jobtype' => 'method',
@@ -153,7 +154,7 @@ class modNavOnline extends DolibarrModules
 				'objectname' => 'NavOnlineInbound',
 				'method' => 'syncScheduled',
 				'parameters' => '10',
-				'comment' => 'Read the list of inbound invoices of the last 10 days from NAV Online Számla (query only; recording needs confirmation on the NAV inbound invoices page)',
+				'comment' => 'Read the list of inbound invoices processed by NAV Online Számla since the last run (first run: last 10 days) (query only; recording needs confirmation on the NAV inbound invoices page)',
 				'frequency' => 1,
 				'unitfrequency' => 86400,
 				'status' => 1,
