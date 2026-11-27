@@ -800,12 +800,29 @@ class NavOnlineInbound
 				}
 			}
 		}
+		$invCurrency = strtoupper($inv['currency']) !== strtoupper($conf->currency) ? strtoupper($inv['currency']) : '';
+		$planned = array();	// advance invoice id => amount of this invoice already assigned to it (matching below)
 		foreach ($inv['lines'] as $i => $l) {
 			if (!empty($l['advance']) && $l['advanceOriginal'] !== '' && $l['net'] < 0) {
 				$depId = $this->findOriginal($l['advanceOriginal'], (int) $socid);
 				$deductions[$i] = $depId;
 				if (!$depId) {
 					$this->warnings[] = 'Előleg levonása: a(z) '.$l['advanceOriginal'].' előlegszámla nincs a Dolibarrban, a levonás egyszerű negatív tételként rögzül';
+				}
+			} elseif (!empty($l['advance']) && $l['advanceOriginal'] === '' && $l['net'] < 0 && !$isDeposit && !$isCredit && $kind === '') {
+				// Deduction without advancePaymentData (optional at NAV): the open advance invoice of the supplier that
+				// matches it, when it can be told without doubt
+				$need = $invCurrency !== '' ? abs($l['net']) + abs($l['vat']) : abs($l['netHuf']) + abs($l['vatHuf']);
+				list($depId, $depRef, $candidates) = $this->matchOpenDeposit((int) $socid, $invCurrency, $need, $planned);
+				$deductions[$i] = $depId;
+				if ($depId) {
+					$planned[$depId] = ($planned[$depId] ?? 0) + $need;
+					$inv['lines'][$i]['advanceOriginal'] = $depRef;
+					$this->warnings[] = 'Előleg levonása az előlegszámla száma nélkül (a szállító nem adta meg): a(z) '.$depRef.' nyitott előlegszámlához kapcsoltam, mert csak az illik rá ('.price($need).($invCurrency !== '' ? ' '.$invCurrency : ' Ft').'). Ellenőrizd.';
+				} else {
+					$this->warnings[] = 'Előleg levonása az előlegszámla száma nélkül (a szállító nem adta meg), és nem azonosítható egyértelműen, melyik előlegből: '
+						.($candidates ? 'lehetséges előlegszámlák: '.implode(', ', $candidates) : 'a szállítónak nincs elég nagy nyitott előlegszámlája a Dolibarrban')
+						.'. A levonás egyszerű negatív tételként rögzül: párosítsd kézzel az előleggel (kedvezmény felhasználása), különben az előleg felhasználatlan marad.';
 				}
 			}
 		}
@@ -966,13 +983,28 @@ class NavOnlineInbound
 		if ($dep->fetch($depId) <= 0) {
 			return 0;
 		}
-		$ttcHuf = abs((float) $l['netHuf']) + abs((float) $l['vatHuf']);
-		$res = $this->db->query('SELECT SUM(amount_ttc) AS s FROM '.$this->db->prefix().'societe_remise_except WHERE fk_invoice_supplier_source = '.((int) $depId));
-		$o = $res ? $this->db->fetch_object($res) : null;
-		$used = $o ? (float) $o->s : 0;
-		if ((int) $dep->type !== FactureFournisseur::TYPE_DEPOSIT || $used + $ttcHuf > abs((float) $dep->total_ttc) + 0.01) {
-			$this->warnings[] = 'Előleg levonása: a(z) '.$dep->ref_supplier.' '.((int) $dep->type !== FactureFournisseur::TYPE_DEPOSIT ? 'nem előlegszámlaként van rögzítve' : 'előlegszámla már fel van használva (kedvezménnyé alakítva)').', ezért a levonás egyszerű negatív tétel - ellenőrizd, nincs-e kétszer levonva';
+		if ((int) $dep->type !== FactureFournisseur::TYPE_DEPOSIT) {
+			$this->warnings[] = 'Előleg levonása: a(z) '.$dep->ref_supplier.' nem előlegszámlaként van rögzítve, ezért a levonás egyszerű negatív tétel - ellenőrizd, nincs-e kétszer levonva';
 			return 0;
+		}
+		// Compared in the currency of the advance: the deduction line has the HUF amounts at the rate of the final invoice
+		// (NAV: a final invoice has a single rate), the advance its own HUF amounts
+		$depCur = self::depositCurrency($dep);
+		if ($depCur !== strtoupper($currency)) {
+			$this->warnings[] = 'Előleg levonása: a(z) '.$dep->ref_supplier.' előlegszámla pénzneme ('.($depCur !== '' ? $depCur : 'HUF').') eltér a végszámláétól ('.($currency !== '' ? strtoupper($currency) : 'HUF').'), ezért a levonás egyszerű negatív tétel - párosítsd kézzel';
+			return 0;
+		}
+		$need = $currency !== '' ? abs((float) $l['net']) + abs((float) $l['vat']) : abs((float) $l['netHuf']) + abs((float) $l['vatHuf']);
+		if ($need > $this->depositRemaining($dep) + 0.01) {
+			$this->warnings[] = 'Előleg levonása: a(z) '.$dep->ref_supplier.' előlegszámlából nem maradt elég felhasználatlan összeg (már kedvezménnyé alakítva / levonva), ezért a levonás egyszerű negatív tétel - ellenőrizd, nincs-e kétszer levonva';
+			return 0;
+		}
+		// HUF amounts of the discount: those of the advance (its rate); the line keeps the HUF of the final invoice
+		$ttcHuf = abs((float) $l['netHuf']) + abs((float) $l['vatHuf']);
+		if ($currency !== '' && (float) $dep->multicurrency_tx > 0) {
+			$l['netHuf'] = (float) price2num(abs((float) $l['net']) / (float) $dep->multicurrency_tx, 'MT');
+			$l['vatHuf'] = (float) price2num(abs((float) $l['vat']) / (float) $dep->multicurrency_tx, 'MT');
+			$ttcHuf = $l['netHuf'] + $l['vatHuf'];
 		}
 		$d = new DiscountAbsolute($this->db);
 		$d->description = '(DEPOSIT)';
@@ -1067,6 +1099,68 @@ class NavOnlineInbound
 			$this->warnings[] = 'A(z) '.$orig.' számla már jóvá van hagyva, az adatait nem módosítottam. Ha a teljesítés dátuma változott, ellenőrizd a könyvelővel az ÁFA-levonás időszakát.';
 		}
 		return $origId;
+	}
+
+	/**
+	 * @param FactureFournisseur $dep Supplier invoice
+	 * @return string Its foreign currency code, '' when in the main currency
+	 */
+	private static function depositCurrency($dep)
+	{
+		global $conf;
+		$c = strtoupper((string) $dep->multicurrency_code);
+		return ($c === '' || $c === strtoupper((string) $conf->currency)) ? '' : $c;
+	}
+
+	/**
+	 * Part of a supplier advance invoice not yet used as a discount, in its own currency (TTC).
+	 *
+	 * @param FactureFournisseur $dep Advance invoice
+	 * @return float
+	 */
+	private function depositRemaining($dep)
+	{
+		$foreign = self::depositCurrency($dep) !== '';
+		$res = $this->db->query('SELECT SUM('.($foreign ? 'multicurrency_amount_ttc' : 'amount_ttc').') AS s FROM '.$this->db->prefix().'societe_remise_except WHERE fk_invoice_supplier_source = '.((int) $dep->id));
+		$o = $res ? $this->db->fetch_object($res) : null;
+		return abs((float) ($foreign ? $dep->multicurrency_total_ttc : $dep->total_ttc)) - ($o ? (float) $o->s : 0);
+	}
+
+	/**
+	 * Open advance invoice of a supplier for a deduction line that does not name it (no advancePaymentData): the only
+	 * one whose unused part equals the deduction, else the only one that covers it.
+	 *
+	 * @param int                $socid    Supplier
+	 * @param string             $currency Foreign currency of the final invoice ('' = HUF)
+	 * @param float              $need     Deduction TTC in that currency
+	 * @param array<int,float>   $planned  Advance id => amount already assigned by earlier lines of the same invoice
+	 * @return array{0:int,1:string,2:string[]} Advance id (0 = none or not unique), its supplier ref, candidates "ref (remaining)"
+	 */
+	private function matchOpenDeposit($socid, $currency, $need, array $planned)
+	{
+		$sql = 'SELECT rowid FROM '.$this->db->prefix().'facture_fourn WHERE fk_soc = '.((int) $socid).' AND type = '.FactureFournisseur::TYPE_DEPOSIT;
+		$sql .= ' AND fk_statut IN (0, 1, 2) AND entity IN ('.getEntity('invoice').') ORDER BY datef, rowid';
+		$res = $this->db->query($sql);
+		$exact = $enough = $candidates = array();
+		while ($res && ($o = $this->db->fetch_object($res))) {
+			$dep = new FactureFournisseur($this->db);
+			if ($dep->fetch((int) $o->rowid) <= 0 || self::depositCurrency($dep) !== $currency) {
+				continue;
+			}
+			$left = $this->depositRemaining($dep) - ($planned[$dep->id] ?? 0);
+			if ($left <= 0.01) {
+				continue;
+			}
+			$candidates[] = $dep->ref_supplier.' ('.price($left).($currency !== '' ? ' '.$currency : ' Ft').')';
+			if (abs($left - $need) <= 0.01) {
+				$exact[] = $dep;
+			}
+			if ($left >= $need - 0.01) {
+				$enough[] = $dep;
+			}
+		}
+		$pick = count($exact) === 1 ? $exact[0] : (count($exact) === 0 && count($enough) === 1 ? $enough[0] : null);
+		return $pick ? array((int) $pick->id, (string) $pick->ref_supplier, $candidates) : array(0, '', $candidates);
 	}
 
 	/**
