@@ -1,0 +1,35 @@
+-- NAV Online Számla: inbound (supplier) invoices read from NAV (queryInvoiceDigest / queryInvoiceData, INBOUND).
+-- Read-only from NAV's side. status: 0=new, 1=recorded (fk_facture_fourn), 9=ignored
+
+CREATE TABLE llx_navonline_inbound (
+	rowid                   integer AUTO_INCREMENT PRIMARY KEY NOT NULL,
+	entity                  integer DEFAULT 1 NOT NULL,
+	environment             varchar(8) DEFAULT 'prod' NOT NULL,
+	invoice_number          varchar(64) NOT NULL,
+	supplier_taxid          varchar(8) NOT NULL,
+	supplier_name           varchar(255) NULL,
+	operation               varchar(8) NULL,
+	category                varchar(16) NULL,
+	issue_date              date NULL,
+	delivery_date           date NULL,
+	payment_date            date NULL,
+	payment_method          varchar(16) NULL,
+	currency                varchar(3) NULL,
+	net_amount              double(24,8) NULL,
+	vat_amount              double(24,8) NULL,
+	net_amount_huf          double(24,8) NULL,
+	vat_amount_huf          double(24,8) NULL,
+	appearance              varchar(16) NULL,
+	completeness            smallint DEFAULT 0 NOT NULL,
+	transaction_id          varchar(32) NULL,
+	invoice_index           integer NULL,
+	ins_date                datetime NULL,
+	original_invoice_number varchar(64) NULL,
+	invoice_xml             mediumtext NULL,
+	fk_soc                  integer NULL,
+	fk_facture_fourn        integer NULL,
+	status                  smallint DEFAULT 0 NOT NULL,
+	note                    varchar(255) NULL,
+	date_creation           datetime NULL,
+	tms                     timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=innodb;

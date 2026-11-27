@@ -1,0 +1,5 @@
+{
+    "require": {
+        "pzs/nav-online-invoice": "^3.0"
+    }
+}
