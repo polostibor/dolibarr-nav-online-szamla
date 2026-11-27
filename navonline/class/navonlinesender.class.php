@@ -878,6 +878,14 @@ class NavOnlineSender
 			$this->errors[] = 'Draft invoices cannot be queued';
 			return -1;
 		}
+		// Only types the XML builder can report: a proforma is not an invoice, replacement / situation are not supported
+		$type = (int) $invoice->type;
+		if (!in_array($type, array(Facture::TYPE_STANDARD, Facture::TYPE_DEPOSIT, Facture::TYPE_CREDIT_NOTE), true)) {
+			global $langs;
+			$langs->load('navonline@navonline');
+			$this->errors[] = $langs->trans($type === Facture::TYPE_PROFORMA ? 'NavOnlineErrProformaEnqueue' : ($type === Facture::TYPE_SITUATION ? 'NavOnlineErrSituationType' : 'NavOnlineErrReplacementType'));
+			return -1;
+		}
 		// OSS invoices are not reported to NAV (navonlineOssLineCounts()): they stay out of the queue
 		require_once __DIR__.'/../lib/navonline.lib.php';
 		list($n, $noss) = navonlineOssLineCounts($this->db, 'facture', (int) $invoice->id);

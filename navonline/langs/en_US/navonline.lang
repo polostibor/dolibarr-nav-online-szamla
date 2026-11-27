@@ -329,3 +329,9 @@ NavOnlineExtraExitDate = Date of exit
 NavOnlineExtraExitDateHelp = Date the goods left the European Union according to the exit confirmation (within 90 days of the supply for the export exemption).
 NavOnlineErrOssMixed = A document cannot have both OSS lines (foreign VAT rates) and other lines: an OSS invoice is not reported to NAV nor part of the e-ÁFA (it goes to the OSS return), other invoices are. Split it into two documents.
 NavOnlineErrOssEnqueue = OSS invoice (foreign VAT rates): it cannot be sent to NAV, it goes to the quarterly OSS return.
+# Invoice types and díjbekérő
+NavOnlineErrReplacementType = A replacement invoice cannot be sent to NAV with this module. To correct an invoice, issue a credit note for the original invoice, then a new invoice.
+NavOnlineErrSituationType = A situation invoice cannot be sent to NAV with this module. Issue deposit invoices and a final invoice instead.
+NavOnlineErrProformaEnqueue = Proforma: not an invoice, so it cannot be sent to NAV.
+NavOnlineDijbekeroNoInvoice = A díjbekérő (payment request) was made for this order, but there is no validated deposit or standard invoice yet. The díjbekérő is not an invoice and is not reported to NAV: if the customer has paid, a deposit invoice has to be issued for the payment.
+NavOnlineDijbekeroCreateInvoice = Create an invoice from the order

@@ -461,6 +461,7 @@ JS;
 	public function doActions($parameters, &$object, &$action, $hookmanager)
 	{
 		global $user;
+		$this->dijbekeroReminder($parameters, $object, $action);
 		if ($action !== 'confirm_navvisszaru' || GETPOST('confirm', 'alpha') !== 'yes' || !$this->navReturnApplies($parameters, $object)) {
 			return 0;
 		}
@@ -473,6 +474,51 @@ JS;
 		}
 		$action = '';
 		return 0;
+	}
+
+	/**
+	 * Order card (view): a díjbekérő (pdf_dijbekero, <ref>_dijbekero.pdf) was made for the validated order, but no
+	 * validated standard or deposit invoice is linked to it yet. The díjbekérő is not an invoice and is not reported
+	 * to NAV; once the customer pays, an advance invoice (előlegszámla) has to be issued. Dolibarr orders have no
+	 * payments of their own, so the reminder stays until such an invoice exists.
+	 *
+	 * @param array<string,mixed> $parameters Hook parameters
+	 * @param CommonObject        $object     Order
+	 * @param string              $action     Action
+	 * @return void
+	 */
+	private function dijbekeroReminder($parameters, $object, $action)
+	{
+		global $langs, $user;
+
+		$contexts = explode(':', (string) ($parameters['context'] ?? ''));
+		if ($action !== '' || !in_array('ordercard', $contexts, true) || !is_object($object) || ($object->element ?? '') !== 'commande'
+			|| empty($object->id) || (int) $object->status < 1 || !preg_match('#/commande/card\.php$#', (string) ($_SERVER['PHP_SELF'] ?? ''))) {
+			return;
+		}
+		$base = getMultidirOutput($object);
+		$ref = dol_sanitizeFileName($object->ref);
+		if (empty($base) || !is_file($base.'/'.$ref.'/'.$ref.'_dijbekero.pdf')) {
+			return;
+		}
+		// Linked customer invoice in either direction of element_element, validated (or later), standard or deposit
+		$p = $this->db->prefix();
+		$id = (int) $object->id;
+		$sql = 'SELECT f.rowid FROM '.$p.'element_element ee JOIN '.$p.'facture f ON';
+		$sql .= " (ee.sourcetype = 'commande' AND ee.fk_source = ".$id." AND ee.targettype = 'facture' AND f.rowid = ee.fk_target)";
+		$sql .= " OR (ee.targettype = 'commande' AND ee.fk_target = ".$id." AND ee.sourcetype = 'facture' AND f.rowid = ee.fk_source)";
+		$sql .= ' WHERE f.fk_statut > 0 AND f.type IN (0, 3) LIMIT 1';
+		$res = $this->db->query($sql);
+		if (!$res || $this->db->num_rows($res) > 0) {
+			return;
+		}
+		$langs->load('navonline@navonline');
+		$msg = $langs->trans('NavOnlineDijbekeroNoInvoice');
+		if (isModEnabled('invoice') && $user->hasRight('facture', 'creer')) {
+			$url = DOL_URL_ROOT.'/compta/facture/card.php?action=create&origin=commande&originid='.$id.'&socid='.((int) $object->socid);
+			$msg .= ' <a href="'.dol_escape_htmltag($url).'">'.$langs->trans('NavOnlineDijbekeroCreateInvoice').'</a>';
+		}
+		setEventMessages($msg, null, 'warnings');
 	}
 
 	/**

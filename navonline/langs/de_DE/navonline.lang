@@ -181,3 +181,9 @@ NavOnlineExtraExitDate = Ausgangsdatum
 NavOnlineExtraExitDateHelp = Datum, an dem die Ware die Europäische Union laut Ausgangsbestätigung verlassen hat (für die Steuerbefreiung innerhalb von 90 Tagen nach der Lieferung).
 NavOnlineErrOssMixed = Ein Beleg darf nicht zugleich OSS-Positionen (ausländische MwSt-Sätze) und andere Positionen enthalten: eine OSS-Rechnung wird nicht an die NAV gemeldet und ist nicht Teil der e-ÁFA (sie gehört in die OSS-Erklärung), andere Rechnungen schon. Bitte auf zwei Belege aufteilen.
 NavOnlineErrOssEnqueue = OSS-Rechnung (ausländische MwSt-Sätze): kann nicht an die NAV gesendet werden, sie gehört in die vierteljährliche OSS-Erklärung.
+# Rechnungsarten und Díjbekérő
+NavOnlineErrReplacementType = Eine Ersatzrechnung kann mit diesem Modul nicht an die NAV gesendet werden. Zur Korrektur eine Gutschrift zur ursprünglichen Rechnung und danach eine neue Rechnung ausstellen.
+NavOnlineErrSituationType = Eine Abschlagsrechnung nach Baufortschritt kann mit diesem Modul nicht an die NAV gesendet werden. Stattdessen Anzahlungsrechnungen und eine Schlussrechnung ausstellen.
+NavOnlineErrProformaEnqueue = Proforma: keine Rechnung, daher nicht an die NAV sendbar.
+NavOnlineDijbekeroNoInvoice = Zu diesem Auftrag wurde eine Zahlungsaufforderung (Díjbekérő) erstellt, aber noch keine freigegebene Anzahlungs- oder normale Rechnung. Die Zahlungsaufforderung ist keine Rechnung und wird nicht an die NAV gemeldet: hat der Kunde bereits bezahlt, ist für die Zahlung eine Anzahlungsrechnung auszustellen.
+NavOnlineDijbekeroCreateInvoice = Rechnung aus dem Auftrag erstellen

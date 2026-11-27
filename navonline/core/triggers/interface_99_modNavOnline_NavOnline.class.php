@@ -109,7 +109,7 @@ class InterfaceNavOnline extends DolibarrTriggers
 				}
 				return $this->bankAccountForCurrency($object, $conf, true);
 			case 'BILL_VALIDATE':
-				if ($this->mixedZeroCases($object) < 0 || $this->reverseChargeBuyer($object) < 0 || $this->subjectExemptSeller($object) < 0 || $this->intraCommunityBuyer($object) < 0 || $this->exportAndGoodsOnly($object) < 0 || $this->ossMixed($object) < 0) {
+				if ($this->unsupportedInvoiceType($object) < 0 || $this->mixedZeroCases($object) < 0 || $this->reverseChargeBuyer($object) < 0 || $this->subjectExemptSeller($object) < 0 || $this->intraCommunityBuyer($object) < 0 || $this->exportAndGoodsOnly($object) < 0 || $this->ossMixed($object) < 0) {
 					return -1;	// validation refused (nothing is reported to NAV)
 				}
 				// Teljesítés dátuma first: the PDF (generated after validation) and the NAV XML must show the same date
@@ -137,6 +137,31 @@ class InterfaceNavOnline extends DolibarrTriggers
 		}
 
 		return 0;
+	}
+
+	/**
+	 * Replacement (helyesbítő, TYPE_REPLACEMENT) and situation (részszámla, TYPE_SITUATION) invoices are invoices that
+	 * must be reported, but the XML builder supports only standard, deposit and credit note invoices. Validation is
+	 * refused, so no invoice exists that cannot be reported. Only for a Hungarian issuer, as billValidate().
+	 *
+	 * @param Facture $object Invoice being validated
+	 * @return int -1 = refused, 0 = OK
+	 */
+	private function unsupportedInvoiceType($object)
+	{
+		global $langs, $mysoc;
+
+		if (!$this->isCustomerInvoice($object) || empty($mysoc->country_code) || $mysoc->country_code !== 'HU') {
+			return 0;
+		}
+		$type = (int) $object->type;
+		if ($type !== Facture::TYPE_REPLACEMENT && $type !== Facture::TYPE_SITUATION) {
+			return 0;
+		}
+		$langs->load('navonline@navonline');
+		$this->errors[] = $langs->trans($type === Facture::TYPE_REPLACEMENT ? 'NavOnlineErrReplacementType' : 'NavOnlineErrSituationType');
+		$this->error = end($this->errors);
+		return -1;
 	}
 
 	/**
@@ -325,14 +350,20 @@ class InterfaceNavOnline extends DolibarrTriggers
 			return $this->softFail('fetch queue row failed: '.$this->db->lasterror());
 		}
 
-		// OSS invoices (only foreign / OSS VAT lines, place of supply in another member state) are not part of the
-		// NAV data reporting: they go to the quarterly OSS return. Recorded as cancelled with the reason, never sent.
-		// A mixed invoice (OSS + Hungarian lines) is refused at validation (ossMixed()).
-		if ($this->isOssOnlyInvoice((int) $object->id)) {
+		// Documents outside the NAV data reporting, recorded as cancelled with the reason and never sent:
+		// - proforma invoice (Facture::TYPE_PROFORMA): not an invoice under the VAT Act, like the díjbekérő of an order;
+		// - OSS invoice (only foreign / OSS VAT lines, place of supply in another member state): it goes to the
+		//   quarterly OSS return. A mixed invoice (OSS + Hungarian lines) is refused at validation (ossMixed()).
+		$msg = '';
+		if ((int) $object->type === Facture::TYPE_PROFORMA) {
+			$msg = 'Proforma: nem számla, nem tartozik a NAV-adatszolgáltatás alá';
+		} elseif ($this->isOssOnlyInvoice((int) $object->id)) {
+			$msg = 'OSS-számla: nem tartozik a NAV-adatszolgáltatás alá (negyedéves OSS-bevallásban kell szerepeltetni)';
+		}
+		if ($msg !== '') {
 			if ($existing && in_array((int) $existing->status, array(self::STATUS_SENT, self::STATUS_DONE, self::STATUS_ANNUL_REQUESTED), true)) {
 				return 0;
 			}
-			$msg = 'OSS-számla: nem tartozik a NAV-adatszolgáltatás alá (negyedéves OSS-bevallásban kell szerepeltetni)';
 			if ($existing) {
 				$sql = 'UPDATE '.$this->db->prefix().'navonline_invoice SET';
 				$sql .= " invoice_ref = '".$this->db->escape($ref)."', invoice_type = ".((int) $object->type).', status = '.self::STATUS_CANCELLED;
@@ -344,9 +375,9 @@ class InterfaceNavOnline extends DolibarrTriggers
 				$sql .= ', '.self::STATUS_CANCELLED.", '".$this->db->escape($msg)."', '".$this->db->idate(dol_now())."', ".((int) $user->id).')';
 			}
 			if (!$this->db->query($sql)) {
-				return $this->softFail('OSS queue record failed: '.$this->db->lasterror());
+				return $this->softFail('not-reported queue record failed: '.$this->db->lasterror());
 			}
-			dol_syslog(__METHOD__.' invoice id='.$object->id.' ref='.$ref.' is an OSS invoice: not reported to NAV', LOG_INFO);
+			dol_syslog(__METHOD__.' invoice id='.$object->id.' ref='.$ref.' not reported to NAV: '.$msg, LOG_INFO);
 			return 1;
 		}
 

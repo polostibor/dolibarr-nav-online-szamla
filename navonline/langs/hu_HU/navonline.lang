@@ -329,3 +329,9 @@ NavOnlineExtraExitDate = Kilépés dátuma
 NavOnlineExtraExitDateHelp = Az áru Európai Unióból való kilépésének dátuma a kilépési igazolás szerint (az exportmentességhez a teljesítéstől számított 90 napon belül).
 NavOnlineErrOssMixed = Egy bizonylaton nem lehet egyszerre OSS-tétel (külföldi áfakulcs) és más tétel: az OSS-számla nem kerül a NAV-hoz és az e-ÁFA-ba (az OSS-bevallásban szerepel), a többi számla igen. Válaszd szét két bizonylatra.
 NavOnlineErrOssEnqueue = OSS-számla (külföldi áfakulcsok): nem küldhető a NAV-nak, a negyedéves OSS-bevallásban kell szerepeltetni.
+# Számlatípusok és díjbekérő
+NavOnlineErrReplacementType = Helyesbítő számla (Dolibarrban „Csere számla”) nem küldhető a NAV-nak ebben a modulban. Helyesbítéshez állíts ki jóváírást az eredeti számlára, majd új számlát.
+NavOnlineErrSituationType = Részszámla (Dolibarrban „Helyzetszámla”) nem küldhető a NAV-nak ebben a modulban. Állíts ki helyette előlegszámlákat és végszámlát.
+NavOnlineErrProformaEnqueue = Proforma: nem számla, ezért nem küldhető a NAV-nak.
+NavOnlineDijbekeroNoInvoice = Ehhez a rendeléshez díjbekérő készült, de még nincs jóváhagyott előleg- vagy rendes számla. A díjbekérő nem számla, a NAV-hoz nem kerül: ha a vevő már fizetett, a fizetés alapján előlegszámlát kell kiállítani.
+NavOnlineDijbekeroCreateInvoice = Számla készítése a rendelésből
