@@ -286,6 +286,39 @@ class ActionsNavonline
 	}
 
 	/**
+	 * Left menu: the "Payments" entry under the customer invoices is named "Kiegyenlítések" (a customer invoice is
+	 * settled, not paid out). The core uses the same "Payments" key for supplier invoices, salaries, taxes..., which
+	 * keep it; so only this entry (leftmenu customers_bills_payment) is renamed here, without a core change.
+	 *
+	 * @param array<string,mixed>            $parameters  mainmenu
+	 * @param array<int,array<string,mixed>> $object      Menu entries (eldy left menu)
+	 * @param string                         $action      Action
+	 * @param HookManager                    $hookmanager Hook manager
+	 * @return int 1 = entries replaced by $this->results, 0 = nothing changed
+	 */
+	public function menuLeftMenuItems($parameters, &$object, &$action, $hookmanager)
+	{
+		global $langs;
+
+		if (!is_array($object)) {
+			return 0;
+		}
+		$changed = false;
+		foreach ($object as $k => $it) {
+			if (is_array($it) && ($it['leftmenu'] ?? '') === 'customers_bills_payment' && (int) ($it['level'] ?? -1) === 1) {
+				$langs->load('navonline@navonline');
+				$object[$k]['titre'] = $langs->trans('NavOnlineCustomerPaymentsMenu');
+				$changed = true;
+			}
+		}
+		if (!$changed) {
+			return 0;
+		}
+		$this->results = $object;	// HookManager: ->results becomes ->resArray, which replaces the menu (return 1)
+		return 1;
+	}
+
+	/**
 	 * New partner form (societe/card.php, action create): a "Shipping method" select, saved by the COMPANY_CREATE
 	 * trigger (field navonline_shipping_method_id). After creation it is edited on the customer tab as usual.
 	 *

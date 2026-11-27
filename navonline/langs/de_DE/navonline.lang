@@ -196,3 +196,5 @@ NavOnlineSupplierCreditApplied = Die Lieferantengutschrift %s (%s HUF) wurde vom
 NavOnlineSupplierCreditNotApplied = Die Lieferantengutschrift %s (%s HUF) ist höher als der offene Betrag der Rechnung %s (%s HUF), weil die ursprüngliche Rechnung bereits (teilweise) bezahlt wurde: der Lieferant schuldet eine Rückzahlung. Die Gutschrift bitte manuell bearbeiten (Rückzahlung erfassen oder in einen Rabatt umwandeln).
 # Bankkivonat-import / bank statement import
 NavOnlineBankImportMenu = Kontoauszug importieren
+# Menü: a vevői számlák alatti fizetések / customer invoice payments menu
+NavOnlineCustomerPaymentsMenu = Zahlungseingänge

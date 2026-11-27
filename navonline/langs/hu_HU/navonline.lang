@@ -344,3 +344,5 @@ NavOnlineSupplierCreditApplied = A(z) %s szállítói jóváírás (%s Ft) levon
 NavOnlineSupplierCreditNotApplied = A(z) %s szállítói jóváírás (%s Ft) nagyobb, mint a(z) %s számla fennmaradó tartozása (%s Ft), mert az eredetit már (részben) kifizették: a szállító visszautalással tartozik. A jóváírást kézzel kezeld (visszatérítés rögzítése vagy kedvezménnyé alakítás).
 # Bankkivonat-import / bank statement import
 NavOnlineBankImportMenu = Bankkivonat importálása
+# Menü: a vevői számlák alatti fizetések / customer invoice payments menu
+NavOnlineCustomerPaymentsMenu = Kiegyenlítések
