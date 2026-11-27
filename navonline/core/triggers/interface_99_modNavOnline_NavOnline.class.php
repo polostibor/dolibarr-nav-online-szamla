@@ -114,6 +114,7 @@ class InterfaceNavOnline extends DolibarrTriggers
 				}
 				// Teljesítés dátuma first: the PDF (generated after validation) and the NAV XML must show the same date
 				$this->stornoDeliveryDate($object);
+				$this->creditNoteDeliveryDate($object);
 				$this->deliveryDateDefault($object);
 				// The rate may have changed on the draft (setMulticurrencyRate leaves deduction lines alone): before the
 				// PDF and the NAV XML are made, the deposit deductions are recalculated at the final invoice rate again
@@ -877,6 +878,36 @@ class InterfaceNavOnline extends DolibarrTriggers
 		dol_syslog(__METHOD__.' credit note id='.$object->id.' multicurrency_tx='.$object->multicurrency_tx.' (source invoice)', LOG_DEBUG);
 
 		return 1;
+	}
+
+	/**
+	 * Módosító számla (credit note reported as MODIFY): NAV interface specification 3.0, 2.5.2 point 8 -
+	 * invoiceDeliveryDate is the teljesítés dátuma of the original invoice, unless the document modifies it. With a
+	 * credit note date in another month NAV warns (UNINTENDED_MODIFICATION_DELIVERY_DATE, active in production since
+	 * 2026-01-01; after earlier modifications it compares with the last modifying invoice). So when no teljesítés
+	 * dátuma was entered on the draft, the credit note gets the one of the last earlier credit note of the same original,
+	 * else that of the original; on the PDF and in the NAV XML alike. A date entered by the user is kept (the credit
+	 * note then modifies the date). STORNO: stornoDeliveryDate().
+	 *
+	 * @param Facture $object Credit note being validated
+	 * @return int
+	 */
+	private function creditNoteDeliveryDate($object)
+	{
+		if (!$this->isCustomerInvoice($object) || (int) $object->type !== Facture::TYPE_CREDIT_NOTE || empty($object->fk_facture_source) || !empty($object->date_pointoftax)) {
+			return 0;
+		}
+		$src = (int) $object->fk_facture_source;
+		$sql = 'SELECT COALESCE(date_pointoftax, datef) AS d FROM '.$this->db->prefix().'facture';
+		$sql .= ' WHERE rowid = '.$src.' OR (fk_facture_source = '.$src.' AND type = '.Facture::TYPE_CREDIT_NOTE.' AND fk_statut > 0 AND rowid <> '.((int) $object->id).')';
+		$sql .= ' ORDER BY (rowid = '.$src.'), rowid DESC LIMIT 1';	// earlier credit notes (latest first), then the original
+		$res = $this->db->query($sql);
+		$o = $res ? $this->db->fetch_object($res) : null;
+		if (!$o || empty($o->d)) {
+			return 0;
+		}
+		dol_syslog(__METHOD__.' credit note id='.$object->id.': teljesítés dátuma of the original chain '.$o->d);
+		return $this->setDeliveryDate($object, (int) $this->db->jdate($o->d));
 	}
 
 	/**

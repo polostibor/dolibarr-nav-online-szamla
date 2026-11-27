@@ -304,9 +304,32 @@ class NavOnlineSender
 			$invoice->fetch_thirdparty();
 
 			// A credit note referencing an original that is still being processed must wait (not in dry-run: nothing is sent)
-			if (!$dryRun && (int) $invoice->type === Facture::TYPE_CREDIT_NOTE && $this->isSourceInProgress($invoice)) {
+			$isCreditNote = ((int) $invoice->type === Facture::TYPE_CREDIT_NOTE);
+			if (!$dryRun && $isCreditNote && $this->isSourceInProgress($invoice)) {
 				$this->log[] = $invoice->ref.': waiting for the original invoice to be processed by NAV';
 				continue;
+			}
+			// An original refused by NAV (error) will still be reported once corrected: the credit note waits for it, it
+			// must not go as a modification without master (modifyWithoutMaster is only for originals never reported)
+			if (!$dryRun && $isCreditNote && ($srcRef = $this->sourceInError($invoice)) !== '') {
+				$this->keepPending($row, 'Vár: az eredeti számla ('.$srcRef.') NAV-beküldése hibás. Előbb azt kell javítani és beküldeni, a jóváírás utána automatikusan megy.');
+				continue;
+			}
+			// Modification data from the invoice chain registered at NAV (queryInvoiceChainDigest, read only): does the
+			// original exist, modification index, last line number. Never estimated: if the query fails the credit note
+			// stays pending and is retried.
+			$buildOptions = array();
+			if (!$dryRun && $isCreditNote) {
+				$navRef = $this->navChainReference($reporter, $invoice);
+				if ($navRef === null) {
+					$this->keepPending($row, 'A NAV számlalánc lekérdezése nem sikerült: '.implode('; ', $this->chainErrors).'. A jóváírás a következő futáskor újra próbálkozik.');
+					continue;
+				}
+				if (!empty($navRef['alreadyAtNav'])) {
+					$this->setError($row, 'A jóváírás ('.$navRef['alreadyAtNav'].') már szerepel a NAV-nál az eredeti számla láncában: nem küldhető újra. Ellenőrizd a NAV-nál nyilvántartott állapotot.');
+					continue;
+				}
+				$buildOptions['referenceNav'] = $navRef;
 			}
 			// A final invoice deducting a deposit must wait until the deposit invoice is processed by NAV
 			$waitingFor = $dryRun ? array() : $this->getDepositsInProgress($invoice);
@@ -316,7 +339,7 @@ class NavOnlineSender
 			}
 
 			$builder = new NavOnlineXmlBuilder($this->db);
-			$xml = $builder->build($invoice);
+			$xml = $builder->build($invoice, null, $buildOptions);
 			if (!$xml) {
 				$this->setError($row, 'Data error: '.implode('; ', $builder->errors));
 				continue;
@@ -1014,6 +1037,97 @@ class NavOnlineSender
 			return in_array((int) $obj->status, array(self::STATUS_PENDING, self::STATUS_SENT, self::STATUS_ANNUL_REQUESTED), true);
 		}
 		return false;
+	}
+
+	/**
+	 * Ref of the original invoice of a credit note when its NAV report is in error (refused, to be corrected and sent
+	 * again), else ''.
+	 *
+	 * @param Facture $invoice Credit note
+	 * @return string
+	 */
+	private function sourceInError($invoice)
+	{
+		if (empty($invoice->fk_facture_source)) {
+			return '';
+		}
+		$sql = 'SELECT q.status, f.ref FROM '.$this->db->prefix().'navonline_invoice q JOIN '.$this->db->prefix().'facture f ON f.rowid = q.fk_facture';
+		$sql .= ' WHERE q.fk_facture = '.((int) $invoice->fk_facture_source).navonlineEnvSql('q.');
+		$resql = $this->db->query($sql);
+		if ($resql && ($obj = $this->db->fetch_object($resql)) && (int) $obj->status === self::STATUS_ERROR) {
+			return (string) $obj->ref;
+		}
+		return '';
+	}
+
+	/** @var string[] Errors of the last navChainReference() call */
+	public $chainErrors = array();
+
+	/**
+	 * Modification data of a credit note from the invoice chain registered at NAV (queryInvoiceChainDigest, OUTBOUND,
+	 * read only), NAV interface specification 3.0, 1.8.3 and 2.2.1:
+	 *  - modifyWithoutMaster: true only when NAV has no valid original (CREATE) with that number. A wrong value is a
+	 *    blocking error (MODIFY_WITHOUT_MASTER_MISMATCH / INVALID_INVOICE_REFERENCE);
+	 *  - modificationIndex: highest index of the modifications already at NAV + 1 (must be unique:
+	 *    MODIFICATION_INDEX_NOT_UNIQUE), whoever reported them;
+	 *  - lineNumberOffset: highest line number of the chain (lines of the original, new lines of the modifications), the
+	 *    new lines continue from there (INVOICE_LINE_ALREADY_EXISTS otherwise).
+	 *
+	 * @param \NavOnlineInvoice\Reporter $reporter Reporter
+	 * @param Facture                    $invoice  Credit note
+	 * @return array<string,mixed>|null Null when the chain cannot be read ($this->chainErrors); 'alreadyAtNav' => ref
+	 *                                  when the credit note itself is already in the chain
+	 */
+	public function navChainReference($reporter, $invoice)
+	{
+		$this->chainErrors = array();
+		$res = $this->db->query('SELECT ref FROM '.$this->db->prefix().'facture WHERE rowid = '.((int) $invoice->fk_facture_source));
+		$src = $res ? $this->db->fetch_object($res) : null;
+		if (!$src || trim((string) $src->ref) === '') {
+			$this->chainErrors[] = 'the credit note has no original invoice';
+			return null;
+		}
+		$original = trim((string) $src->ref);
+		$own = (string) $invoice->ref;
+		$exists = false;
+		$maxIndex = 0;
+		$maxLine = 0;
+		$page = 1;
+		do {
+			try {
+				$result = $reporter->queryInvoiceChainDigest(array('invoiceNumber' => $original, 'invoiceDirection' => 'OUTBOUND'), $page);
+			} catch (Exception $e) {
+				$this->chainErrors[] = NavOnlineClient::describeException($e);
+				return null;
+			}
+			if (!$result) {
+				$this->chainErrors[] = 'empty answer';
+				return null;
+			}
+			$pages = (int) $result->availablePage;
+			foreach ($result->invoiceChainElement as $el) {
+				$number = (string) $el->invoiceChainDigest->invoiceNumber;
+				$operation = (string) $el->invoiceChainDigest->invoiceOperation;
+				if ($number === $own && $operation !== 'CREATE') {
+					return array('alreadyAtNav' => $own);
+				}
+				if ($operation === 'CREATE') {
+					if ($number === $original) {
+						$exists = true;
+					}
+					$maxLine = max($maxLine, (int) $el->invoiceLines->maxLineNumber);
+				}
+				foreach ($el->invoiceLines->newCreatedLines as $nc) {
+					$maxLine = max($maxLine, (int) $nc->lineNumberIntervalEnd);
+				}
+				if (isset($el->invoiceReferenceData->modificationIndex)) {
+					$maxIndex = max($maxIndex, (int) $el->invoiceReferenceData->modificationIndex);
+				}
+			}
+			$page++;
+		} while ($page <= $pages);
+
+		return array('modifyWithoutMaster' => !$exists, 'modificationIndex' => $maxIndex + 1, 'lineNumberOffset' => $maxLine);
 	}
 
 	/**

@@ -134,6 +134,8 @@ class NavOnlineXmlBuilder
 	 * @param Societe|null         $supplier Issuer (defaults to global $mysoc)
 	 * @param array<string,mixed>  $options  Optional overrides (mainly for tests):
 	 *                                       'reference' => array(originalInvoiceNumber, modifyWithoutMaster, modificationIndex, lineNumberOffset)
+	 *                                       'referenceNav' => array(modifyWithoutMaster, modificationIndex, lineNumberOffset) from the NAV
+	 *                                       invoice chain, replacing these values of the reference loaded from the database
 	 *                                       'advanceData' => array(fk_remise_except => array(advanceOriginalInvoice, advancePaymentDate, advanceExchangeRate))
 	 * @return SimpleXMLElement|null       Null if data errors ($this->errors)
 	 */
@@ -185,6 +187,18 @@ class NavOnlineXmlBuilder
 		$lineOffset = 0;
 		if ($type === Facture::TYPE_CREDIT_NOTE) {
 			$reference = isset($options['reference']) ? $options['reference'] : $this->loadReference($invoice);
+			// Values of the invoice chain registered at NAV (NavOnlineSender::navChainReference) replace the local
+			// estimate: modifyWithoutMaster, modificationIndex, lineNumberOffset. A STORNO is only the first modification.
+			if ($reference && !empty($options['referenceNav']) && is_array($options['referenceNav'])) {
+				foreach (array('modifyWithoutMaster', 'modificationIndex', 'lineNumberOffset') as $k) {
+					if (array_key_exists($k, $options['referenceNav'])) {
+						$reference[$k] = $options['referenceNav'][$k];
+					}
+				}
+				if ((int) $reference['modificationIndex'] !== 1) {
+					$reference['fullReversal'] = false;
+				}
+			}
 			if ($reference) {
 				$xRef = $xInvoice->addChild('invoiceReference');
 				$this->add($xRef, 'originalInvoiceNumber', $reference['originalInvoiceNumber']);
