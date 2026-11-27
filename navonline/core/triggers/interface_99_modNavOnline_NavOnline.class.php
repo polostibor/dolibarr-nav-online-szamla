@@ -128,6 +128,7 @@ class InterfaceNavOnline extends DolibarrTriggers
 				if ($ret >= 0) {
 					$this->closeZeroFinalInvoice($object, $user);
 					$this->auditSnapshot($object, $user);
+					$this->eprRecord($object, $user);
 				}
 				return $ret;
 			case 'BILL_DELETE':
@@ -135,9 +136,15 @@ class InterfaceNavOnline extends DolibarrTriggers
 				// INVOICE_CAN_NEVER_BE_REMOVED) leaves no audit export data behind
 				if ($this->isCustomerInvoice($object)) {
 					$this->db->query('DELETE FROM '.$this->db->prefix().'navonline_x01_snapshot WHERE fk_facture = '.((int) $object->id));
+					$this->db->query('DELETE FROM '.$this->db->prefix().'navonline_epr_line WHERE fk_facture = '.((int) $object->id));
 				}
 				return $this->billWithdraw($action, $object, $conf);
 			case 'BILL_UNVALIDATE':
+				// Back to draft: the fee data is recorded again at the next validation
+				if ($this->isCustomerInvoice($object)) {
+					$this->db->query('DELETE FROM '.$this->db->prefix().'navonline_epr_line WHERE fk_facture = '.((int) $object->id));
+				}
+				return $this->billWithdraw($action, $object, $conf);
 			case 'BILL_CANCEL':
 				return $this->billWithdraw($action, $object, $conf);
 			case 'LINEBILL_INSERT':
@@ -321,6 +328,36 @@ class InterfaceNavOnline extends DolibarrTriggers
 			}
 		} catch (Throwable $e) {
 			$this->softFail('audit export snapshot failed: '.$e->getMessage());
+		}
+	}
+
+	/**
+	 * EPR / product fee data of the invoice lines (Hungarian domestic sales), recorded at the end of the validation.
+	 * Never blocks the validation: a line without valid rate is left out with a warning, a database error is logged.
+	 *
+	 * @param Facture $object Invoice being validated
+	 * @param User    $user   User
+	 * @return void
+	 */
+	private function eprRecord($object, $user)
+	{
+		if (!$this->isCustomerInvoice($object)) {
+			return;
+		}
+		dol_include_once('/navonline/class/navonlineepr.class.php');
+		try {
+			$e = new NavOnlineEpr($this->db);
+			if ($e->record($object, $user) < 0) {
+				$this->softFail('EPR fee data failed: '.implode('; ', $e->errors));
+			}
+			foreach ($e->warnings as $w) {
+				dol_syslog('NavOnline EPR: '.$object->ref.': '.$w, LOG_WARNING);
+				if (function_exists('setEventMessages') && !defined('NOREQUIREHTML')) {
+					setEventMessages('EPR: '.$w, null, 'warnings');
+				}
+			}
+		} catch (Throwable $e) {
+			$this->softFail('EPR fee data failed: '.$e->getMessage());
 		}
 	}
 

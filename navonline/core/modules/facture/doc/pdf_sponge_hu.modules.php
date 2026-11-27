@@ -377,6 +377,16 @@ class pdf_sponge_hu extends ModelePDFFactures
 				}
 				$this->navWeight = ((int) $object->type === Facture::TYPE_CREDIT_NOTE) ? array() : $this->navInvoiceWeights($object, $outputlangs, $outputlangsbis);	// NavOnline: weights belong to the export shipment, not to a credit note
 				$this->heightforinfotot += 4 * count($this->navWeight);
+				// NavOnline: EPR / product fee of the lines (recorded at validation; computed for a draft preview)
+				$this->navEpr = array('lines' => array(), 'summary' => array());
+				if (is_readable(dirname(__DIR__, 4).'/class/navonlineepr.class.php')) {
+					require_once dirname(__DIR__, 4).'/class/navonlineepr.class.php';
+					try {
+						$this->navEpr = (new NavOnlineEpr($this->db))->forDocument($object);
+					} catch (Throwable $e) {
+						dol_syslog('NavOnline EPR (PDF): '.$e->getMessage(), LOG_WARNING);
+					}
+				}
 				if ($this->navPaidTerm($object)) {
 					$this->heightforinfotot += 10;	// "Paid / Fizetve" under the totals
 				}
@@ -947,6 +957,13 @@ class pdf_sponge_hu extends ModelePDFFactures
 									navonlinePdfColor($pdf, 'muted');
 									$pdf->MultiCell($this->cols['desc']['width'], 0, $outputlangs->convToOutputCharset($navRef), 0, 'L', false, 1, $this->getColumnContentXStart('desc'), $pdf->GetY() + 0.3);
 									navonlinePdfColor($pdf, 'text');
+									$pdf->SetFont('', '', 9.5);
+								}
+								// NavOnline: EPR / product fee of the line, under it: "11212017 EPR díj (csomagolás) (5 kg) 865,00 Ft. <note>"
+								foreach ($this->navEpr['lines'][(int) $object->lines[$i]->id] ?? array() as $navFee) {
+									$pdf->SetFont('', '', 8);
+									$navTxt = $navFee['kt_code'].' '.$navFee['label'].' ('.$this->navEprQty($navFee['base'], $outputlangs).' '.$navFee['unit'].') '.price((float) $navFee['amount'], 0, $outputlangs, 1, 2, 2).' Ft.'.($navFee['note'] !== '' ? ' '.$navFee['note'] : '');
+									$pdf->MultiCell($this->cols['desc']['width'], 0, $outputlangs->convToOutputCharset($navTxt), 0, 'L', false, 1, $this->getColumnContentXStart('desc'), $pdf->GetY() + 0.3);
 									$pdf->SetFont('', '', 9.5);
 								}
 								$this->setAfterColsLinePositionsData('desc', $pdf->GetY(), $pdf->getPage());
@@ -1570,6 +1587,9 @@ class pdf_sponge_hu extends ModelePDFFactures
 		// NavOnline: VAT summary per rate (tax base, VAT, gross + total row), on every invoice
 		$posy = $this->drawNavVatSummary($pdf, $object, $posy, $outputlangs, $outputlangsbis);
 
+		// NavOnline: EPR / product fee summary of the invoice (information: included in the prices)
+		$posy = $this->drawNavEpr($pdf, $posy, $outputlangs);
+
 		// NavOnline (typography): Incoterms, weights and payment terms are in the right column under the totals (navDrawTerms)
 
 		// Show VAT details
@@ -2107,6 +2127,61 @@ class pdf_sponge_hu extends ModelePDFFactures
 
 	/** @var string[] Gross / net weight lines of an export invoice */
 	private $navWeight = array();
+
+	/** @var array{lines:array<int,array<int,array<string,mixed>>>,summary:array<string,array<string,mixed>>} NavOnline: EPR / product fee of the document */
+	private $navEpr = array('lines' => array(), 'summary' => array());
+
+	/**
+	 * NavOnline: fee base quantity without trailing zeros ("5", "2,5").
+	 *
+	 * @param float     $v           Quantity
+	 * @param Translate $outputlangs Language
+	 * @return string
+	 */
+	protected function navEprQty($v, $outputlangs)
+	{
+		$s = rtrim(rtrim(number_format((float) $v, 3, '.', ''), '0'), '.');
+		return str_replace('.', ',', $s);
+	}
+
+	/**
+	 * NavOnline: "Környezetvédelmi termékdíj / EPR:" block under the VAT summary, one row per code and rate
+	 * ("11212017 EPR díj (csomagolás) (5 kg, 173 Ft/kg)   865 Ft") and the total. Nothing without fee data.
+	 *
+	 * @param TCPDF     $pdf         PDF
+	 * @param float     $posy        Y
+	 * @param Translate $outputlangs Language
+	 * @return float Y after the block
+	 */
+	protected function drawNavEpr(&$pdf, $posy, $outputlangs)
+	{
+		if (empty($this->navEpr['summary'])) {
+			return $posy;
+		}
+		$x0 = $this->marge_gauche;
+		$w = ($this->page_largeur < 210 ? 90 : 100);
+		$wa = 22;
+		$posy += 3;
+		navonlinePdfColor($pdf, 'text');
+		$pdf->SetFont('', 'B', 8.5);
+		$pdf->MultiCell($w, 4, $outputlangs->transnoentities('NavOnlineEprPdfTitle'), 0, 'L', false, 1, $x0, $posy);
+		$posy = $pdf->GetY();
+		$pdf->SetFont('', '', 8.5);
+		$total = 0.0;
+		foreach ($this->navEpr['summary'] as $f) {
+			$txt = $f['kt_code'].'  '.$f['label'].' ('.$this->navEprQty($f['base'], $outputlangs).' '.$f['unit'].', '.price((float) $f['rate'], 0, $outputlangs, 1, 0, -1).' Ft/'.$f['unit'].')';
+			$h = max(4, $pdf->getStringHeight($w - $wa, $txt) + 0.3);
+			$pdf->MultiCell($w - $wa, $h, $outputlangs->convToOutputCharset($txt), 'B', 'L', false, 0, $x0, $posy, true, 0, false, true, 0, 'M');
+			$pdf->MultiCell($wa, $h, price((float) $f['amount'], 0, $outputlangs, 1, 0, 0).' Ft', 'B', 'R', false, 1, $x0 + $w - $wa, $posy, true, 0, false, true, 0, 'M');
+			$posy += $h;
+			$total += (float) $f['amount'];
+		}
+		$pdf->SetFont('', 'B', 8.5);
+		$pdf->MultiCell($w - $wa, 4, $outputlangs->transnoentities('NavOnlineEprPdfTotal'), 0, 'R', false, 0, $x0, $posy);
+		$pdf->MultiCell($wa, 4, price($total, 0, $outputlangs, 1, 0, 0).' Ft', 0, 'R', false, 1, $x0 + $w - $wa, $posy);
+		$pdf->SetFont('', '', 8.5);
+		return $posy + 4 + 2;	// 2 mm before the next block (bank account)
+	}
 
 	/**
 	 * NavOnline: weights of an export (EAM) invoice, from its shipments: linked to the invoice, else the validated

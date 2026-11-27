@@ -350,3 +350,7 @@ NavOnlineBankAccountsListMenu = List of accounts
 NavOnlineBankAccountsListTitle = Bank and cash accounts
 # X01: adóhatósági ellenőrzési adatszolgáltatás (23/2014. NGM rendelet 11/A. §)
 NavOnlineX01Title = Adóhatósági ellenőrzési adatszolgáltatás (tax authority audit export)
+NavOnlineEprTab = EPR / product fee
+NavOnlineEprProductTab = EPR
+NavOnlineEprPdfTitle = Environmental product fee / EPR:
+NavOnlineEprPdfTotal = Total:

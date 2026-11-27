@@ -276,6 +276,11 @@ function navonlineAdminPrepareHead()
 	$head[$h][2] = 'oss';
 	$h++;
 
+	$head[$h][0] = dol_buildpath('/navonline/admin/epr.php', 1);
+	$head[$h][1] = $langs->trans('NavOnlineEprTab');
+	$head[$h][2] = 'epr';
+	$h++;
+
 	complete_head_from_modules($conf, $langs, null, $head, $h, 'navonline@navonline');
 	complete_head_from_modules($conf, $langs, null, $head, $h, 'navonline@navonline', 'remove');
 

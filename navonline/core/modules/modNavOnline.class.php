@@ -110,6 +110,8 @@ class modNavOnline extends DolibarrModules
 		// "NAV Online Számla" tab on the customer invoice card
 		$this->tabs = array(
 			array('data' => 'invoice:+navonline:NavOnlineTab:navonline@navonline:$user->hasRight("navonline", "invoice", "read"):/navonline/invoice_nav.php?id=__ID__'),
+			// "EPR" tab on the product card: EPR / product fee codes of the product
+			array('data' => 'product:+navonlineepr:NavOnlineEprProductTab:navonline@navonline:$user->hasRight("produit", "lire"):/navonline/epr_product.php?id=__ID__'),
 		);
 		$this->dictionaries = array();
 		$this->boxes = array();

@@ -95,6 +95,14 @@ Ez a tároló a Dolibarr `htdocs/custom` mappájának tartalma. Két modult tart
 - A letöltött ZIP számlánként egy XML-t tartalmaz, továbbá a `jegyzek.xml` és a `jegyzek.csv` jegyzéket, és ha van mit jelezni, egy `hibalista.txt`-t. Ha egy számla adata hibás vagy hiányzik, vagy hézag van a sorszámokban, a csomag „HIANYOS” jelölést kap. A modul minden exportot naplóz. Az export nem küld adatot a NAV-nak.
 - A funkció bevezetése előtt jóváhagyott számlákhoz a mentést a `php scripts/navonline_x01_backfill.php --run` paranccsal lehet pótolni. Ezek a mentések „nem kiállításkori” jelölést kapnak.
 
+### EPR és termékdíj
+
+*Beállítás → Modulok → NAV Online Számla → EPR / termékdíj*: díjkódok (EPR vagy termékdíj, KT-kód, díjtétel, mértékegység, érvényesség). A termékkártya *EPR* fülén kapcsolható be a díjkód a termékre, szorzóval (díjalap egységenként, pl. kg/db).
+
+- A vevői számla jóváhagyásakor a modul számlasoronként rögzíti a díjat: díjalap = mennyiség × szorzó, díj = díjalap × a teljesítés napján érvényes díjtétel. Csak magyar belföldi értékesítésnél (magyar kiállító és vevő), számlánál, helyesbítőnél és jóváírónál; előlegszámlánál és pro formánál nem.
+- A jóváíró az eredeti számla díjadatával számol, negatív díjalappal. Ha nincs érvényes díjtétel, a sor kimarad, és a modul figyelmeztet; a jóváhagyást ez nem akadályozza meg. Új díjtétel új sor az első napjától, így a korábbi számlák díja nem változik.
+- A számlán (sponge_hu sablon) a díjköteles sor alatt és a végösszeg alatt külön blokkban látszik a díj. Tájékoztató adat: benne van az árban, a végösszeget nem változtatja.
+
 ### Élesítés előtt
 
 - Előbb a **tesztkörnyezetben** (`https://api-test.onlineszamla.nav.gov.hu/invoiceService/v3`) ellenőrizd a beküldést.
@@ -194,6 +202,14 @@ This repository holds the contents of Dolibarr's `htdocs/custom` folder. It cont
 - You can select invoices by issue date, or by series and invoice number range. Both ends are included. Before you download, a preview shows the number of invoices, the totals, the status of each invoice and any gaps in the numbering.
 - The ZIP contains one XML file per invoice, the manifests `jegyzek.xml` and `jegyzek.csv`, and a `hibalista.txt` if there is anything to report. If an invoice's data is missing or invalid, or the numbering has a gap, the package is marked "HIANYOS" (incomplete). Every export is logged, and nothing is sent to NAV.
 - For invoices validated before this function existed, run `php scripts/navonline_x01_backfill.php --run` to save their data. These saves are marked "not at issue".
+
+### EPR and product fee
+
+*Setup → Modules → NAV Online Számla → EPR / termékdíj*: fee codes (EPR or product fee, KT code, rate, unit, validity). On the *EPR* tab of a product card you switch a code on for the product, with a factor (fee base per unit, e.g. kg per piece).
+
+- When a customer invoice is validated, the module records the fee for each line: fee base = quantity × factor, fee = fee base × the rate valid on the date of supply. This applies only to Hungarian domestic sales (Hungarian seller and customer), on invoices, replacement invoices and credit notes; not on deposit or pro forma invoices.
+- A credit note uses the fee data of its original invoice, with a negative fee base. If no rate is valid, the line is left out and the module warns, but the validation goes ahead. A new rate is a new row from its first day, so the fee on earlier invoices doesn't change.
+- On the invoice (sponge_hu template), the fee is shown under the line and in a separate block below the totals. It is for information: it's included in the price and doesn't change the total.
 
 ### Before going live
 
