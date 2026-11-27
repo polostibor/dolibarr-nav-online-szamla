@@ -23,7 +23,8 @@
  * Supported Dolibarr invoice types:
  *  - 0 standard        -> operation CREATE
  *  - 3 deposit         -> operation CREATE, every line flagged with advanceIndicator
- *  - 2 credit note     -> operation MODIFY (invoiceReference to the source invoice, lines appended with lineOperation CREATE)
+ *  - 2 credit note     -> operation MODIFY (invoiceReference to the source invoice, lines appended with lineOperation CREATE);
+ *                         a credit note of a deposit invoice has its lines flagged with advanceIndicator too
  * Not supported (yet): 1 replacement, 4 proforma, 5 situation.
  *
  * Mapping conventions:
@@ -92,6 +93,9 @@ class NavOnlineXmlBuilder
 	/** @var bool */
 	private $foreignCurrency = false;
 
+	/** @var bool The invoice of the last build is a credit note of a deposit invoice (its lines are advance lines) */
+	private $creditOfDeposit = false;
+
 	/** @var string VAT code of the supplier tax number of the last build (1 = subject-exempt, AAM) */
 	private $supplierVatCode = '';
 
@@ -157,6 +161,14 @@ class NavOnlineXmlBuilder
 		$currency = !empty($invoice->multicurrency_code) ? strtoupper($invoice->multicurrency_code) : 'HUF';
 		$this->foreignCurrency = ($currency !== 'HUF');
 		$this->operation = ($type === Facture::TYPE_CREDIT_NOTE) ? 'MODIFY' : 'CREATE';
+		// Credit note of an előlegszámla (advance refunded or reduced): it modifies advance lines, so its lines are
+		// advance lines too (advanceIndicator, without advancePaymentData as on the deposit invoice itself)
+		$this->creditOfDeposit = false;
+		if ($type === Facture::TYPE_CREDIT_NOTE && !empty($invoice->fk_facture_source)) {
+			$res = $this->db->query('SELECT type FROM '.$this->db->prefix().'facture WHERE rowid = '.((int) $invoice->fk_facture_source));
+			$src = $res ? $this->db->fetch_object($res) : null;
+			$this->creditOfDeposit = ($src && (int) $src->type === Facture::TYPE_DEPOSIT);
+		}
 
 		$root = new SimpleXMLElement('<?xml version="1.0" encoding="UTF-8"?><InvoiceData xmlns="'.self::NS_DATA.'" xmlns:common="'.self::NS_COMMON.'" xmlns:base="'.self::NS_BASE.'"></InvoiceData>');
 
@@ -380,7 +392,7 @@ class NavOnlineXmlBuilder
 
 		// Advance (deposit) data
 		$adv = null;
-		if ((int) $invoice->type === Facture::TYPE_DEPOSIT) {
+		if ((int) $invoice->type === Facture::TYPE_DEPOSIT || ($this->creditOfDeposit && empty($line->fk_remise_except))) {
 			$this->add($x->addChild('advanceData'), 'advanceIndicator', 'true');
 		} elseif (!empty($line->fk_remise_except)) {
 			$adv = isset($options['advanceData'][$line->fk_remise_except]) ? $options['advanceData'][$line->fk_remise_except] : $this->loadAdvanceData((int) $line->fk_remise_except);

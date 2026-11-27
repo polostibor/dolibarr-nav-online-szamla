@@ -2283,7 +2283,8 @@ class pdf_sponge_hu extends ModelePDFFactures
 		$row(array($label('NavOnlineVatSumTotal'), $fmt($sum['ht']), $fmt($sum['tva']), $fmt($sum['ttc'])), true, true);
 
 		// Foreign-currency invoice: total VAT in HUF (Áfa tv. 80. §), from the HUF amounts stored on the lines (a deposit
-		// deduction keeps the HUF VAT of the deposit, as reported to NAV), and under it the exchange rate:
+		// deduction is at the rate of this invoice, see the trigger depositDeductionsAtInvoiceRate(), as reported to
+		// NAV: a final invoice has a single rate), and under it the exchange rate:
 		//   VAT amount / ÁFA tartalom: 30 157,11 HUF
 		//   (1 EUR = 372,3100 HUF)
 		if ($foreign && (float) $object->multicurrency_tx > 0) {

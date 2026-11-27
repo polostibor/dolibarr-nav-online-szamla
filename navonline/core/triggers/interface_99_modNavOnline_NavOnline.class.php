@@ -115,6 +115,11 @@ class InterfaceNavOnline extends DolibarrTriggers
 				// Teljesítés dátuma first: the PDF (generated after validation) and the NAV XML must show the same date
 				$this->stornoDeliveryDate($object);
 				$this->deliveryDateDefault($object);
+				// The rate may have changed on the draft (setMulticurrencyRate leaves deduction lines alone): before the
+				// PDF and the NAV XML are made, the deposit deductions are recalculated at the final invoice rate again
+				if ($this->isCustomerInvoice($object) && $this->depositDeductionsAtInvoiceRate((int) $object->id) > 0) {
+					$this->reloadInvoiceAmounts($object);
+				}
 				$this->bankAccountForCurrency($object, $conf);
 				$ret = $this->billValidate($object, $user, $conf);
 				if ($ret >= 0) {
@@ -128,6 +133,7 @@ class InterfaceNavOnline extends DolibarrTriggers
 			case 'LINEBILL_INSERT':
 				$this->exactExportEurPrice($action, $object);
 				$this->depositVatCode($object);
+				$this->depositDeductionLineAtInvoiceRate($object);
 				return $this->discountLinesLast($object);
 			case 'LINEPROPAL_INSERT':
 			case 'LINEORDER_INSERT':
@@ -224,6 +230,121 @@ class InterfaceNavOnline extends DolibarrTriggers
 			dol_syslog('NavOnline: deposit line '.$line->id.' got VAT code '.$code.' from its source document');
 		}
 		return 0;
+	}
+
+	/**
+	 * New deposit deduction line on a draft foreign currency invoice (Facture::insert_discount): HUF amounts at the
+	 * rate of this invoice, see depositDeductionsAtInvoiceRate(). insert_discount() sums the lines from the database
+	 * (update_price) right after this trigger, so the invoice totals follow.
+	 *
+	 * @param FactureLigne $line New invoice line
+	 * @return int 0
+	 */
+	private function depositDeductionLineAtInvoiceRate($line)
+	{
+		$fk = (int) ($line->fk_facture ?? 0);
+		if ($fk <= 0 || empty($line->fk_remise_except) || empty($line->id)) {
+			return 0;
+		}
+		$res = $this->db->query('SELECT fk_statut FROM '.$this->db->prefix().'facture WHERE rowid = '.$fk);
+		$inv = $res ? $this->db->fetch_object($res) : null;
+		if (!$inv || (int) $inv->fk_statut !== 0) {
+			return 0;
+		}
+		if ($this->depositDeductionsAtInvoiceRate($fk, (int) $line->id) > 0) {
+			$o = $this->db->fetch_object($this->db->query('SELECT subprice, total_ht, total_tva, total_ttc FROM '.$this->db->prefix().'facturedet WHERE rowid = '.((int) $line->id)));
+			if ($o) {
+				$line->subprice = (float) $o->subprice;
+				$line->total_ht = (float) $o->total_ht;
+				$line->total_tva = (float) $o->total_tva;
+				$line->total_ttc = (float) $o->total_ttc;
+			}
+		}
+		return 0;
+	}
+
+	/**
+	 * Deposit deductions of a foreign currency final invoice at the rate of the final invoice.
+	 *
+	 * NAV (interface specification 3.0, 2.9 "Előlegszámla, végszámla adatszolgáltatása"): the final invoice has a single
+	 * exchange rate, the deducted advance is converted at that rate too; the rate of the advance only goes to
+	 * advancePaymentData/advanceExchangeRate (accounting information). Dolibarr copies the HUF amounts of the deposit
+	 * (its rate) onto the deduction line, which gives a wrong HUF VAT base. The amounts in the invoice currency are
+	 * kept (those of the deposit), the HUF amounts are recalculated with the rate reported to NAV (6 decimals); the
+	 * difference to the HUF amount of the deposit is an exchange difference in the accounting. The invoice totals are
+	 * summed again from the lines when a line was changed.
+	 *
+	 * @param int $invoiceId Invoice id
+	 * @param int $lineId    Only this line (0 = every deposit deduction line of the invoice)
+	 * @return int Number of lines changed, <0 on error
+	 */
+	private function depositDeductionsAtInvoiceRate($invoiceId, $lineId = 0)
+	{
+		$p = $this->db->prefix();
+		$res = $this->db->query('SELECT multicurrency_code, multicurrency_tx FROM '.$p.'facture WHERE rowid = '.((int) $invoiceId));
+		$inv = $res ? $this->db->fetch_object($res) : null;
+		$code = $inv ? strtoupper((string) $inv->multicurrency_code) : '';
+		$tx = $inv ? (float) $inv->multicurrency_tx : 0;
+		if ($code === '' || $code === 'HUF' || $tx <= 0) {
+			return 0;
+		}
+		$rate = round(1 / $tx, 6);	// as NavOnlineXmlBuilder::exchangeRate(): 1 foreign = rate HUF
+
+		$sql = 'SELECT d.rowid, d.qty, d.total_ht, d.total_tva, d.multicurrency_total_ht, d.multicurrency_total_tva, s.ref, s.multicurrency_code as src_code';
+		$sql .= ' FROM '.$p.'facturedet d JOIN '.$p.'societe_remise_except r ON r.rowid = d.fk_remise_except';
+		$sql .= ' JOIN '.$p.'facture s ON s.rowid = r.fk_facture_source AND s.type = '.Facture::TYPE_DEPOSIT;
+		$sql .= ' WHERE d.fk_facture = '.((int) $invoiceId).($lineId > 0 ? ' AND d.rowid = '.((int) $lineId) : '');
+		$res = $this->db->query($sql);
+		if (!$res) {
+			return $this->softFail('deposit deduction lookup failed: '.$this->db->lasterror());
+		}
+		$changed = 0;
+		while ($o = $this->db->fetch_object($res)) {
+			if (strtoupper((string) $o->src_code) !== $code) {
+				dol_syslog('NavOnline: deposit '.$o->ref.' is in '.$o->src_code.', the invoice in '.$code.': deduction line '.$o->rowid.' left as it is', LOG_WARNING);
+				continue;
+			}
+			$ht = (float) price2num((float) $o->multicurrency_total_ht * $rate, 'MT');
+			$tva = (float) price2num((float) $o->multicurrency_total_tva * $rate, 'MT');
+			if (abs($ht - (float) $o->total_ht) < 0.005 && abs($tva - (float) $o->total_tva) < 0.005) {
+				continue;
+			}
+			$qty = (float) $o->qty != 0.0 ? (float) $o->qty : 1;
+			$sqlu = 'UPDATE '.$p.'facturedet SET subprice = '.price2num($ht / $qty, 'MU').', total_ht = '.price2num($ht).', total_tva = '.price2num($tva).', total_ttc = '.price2num($ht + $tva);
+			$sqlu .= ' WHERE rowid = '.((int) $o->rowid);
+			if (!$this->db->query($sqlu)) {
+				return $this->softFail('deposit deduction update failed: '.$this->db->lasterror());
+			}
+			dol_syslog('NavOnline: deduction of deposit '.$o->ref.' (line '.$o->rowid.') at the invoice rate '.$rate.': HT '.$o->total_ht.' -> '.$ht.' HUF');
+			$changed++;
+		}
+		if ($changed > 0) {
+			$sqlt = 'UPDATE '.$p.'facture f JOIN (SELECT fk_facture, SUM(total_ht) ht, SUM(total_tva) tva, SUM(total_ttc) ttc FROM '.$p.'facturedet WHERE fk_facture = '.((int) $invoiceId).' GROUP BY fk_facture) t ON t.fk_facture = f.rowid';
+			$sqlt .= ' SET f.total_ht = t.ht, f.total_tva = t.tva, f.total_ttc = t.ttc WHERE f.rowid = '.((int) $invoiceId);
+			if (!$this->db->query($sqlt)) {
+				return $this->softFail('invoice total update failed: '.$this->db->lasterror());
+			}
+		}
+		return $changed;
+	}
+
+	/**
+	 * Refresh the HUF amounts of the invoice object (lines and totals) from the database.
+	 *
+	 * @param Facture $invoice Invoice
+	 * @return void
+	 */
+	private function reloadInvoiceAmounts($invoice)
+	{
+		$o = $this->db->fetch_object($this->db->query('SELECT total_ht, total_tva, total_ttc FROM '.$this->db->prefix().'facture WHERE rowid = '.((int) $invoice->id)));
+		if ($o) {
+			$invoice->total_ht = (float) $o->total_ht;
+			$invoice->total_tva = (float) $o->total_tva;
+			$invoice->total_ttc = (float) $o->total_ttc;
+		}
+		if (method_exists($invoice, 'fetch_lines')) {
+			$invoice->fetch_lines();
+		}
 	}
 
 	/**
