@@ -348,3 +348,5 @@ NavOnlineBankImportMenu = Bank statement import
 NavOnlineCustomerPaymentsMenu = Payments received
 NavOnlineBankAccountsListMenu = List of accounts
 NavOnlineBankAccountsListTitle = Bank and cash accounts
+# X01: adóhatósági ellenőrzési adatszolgáltatás (23/2014. NGM rendelet 11/A. §)
+NavOnlineX01Title = Adóhatósági ellenőrzési adatszolgáltatás (tax authority audit export)

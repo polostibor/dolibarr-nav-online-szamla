@@ -130,9 +130,15 @@ class InterfaceNavOnline extends DolibarrTriggers
 					$this->auditSnapshot($object, $user);
 				}
 				return $ret;
+			case 'BILL_DELETE':
+				// A deleted invoice (test invoices before go-live; an issued invoice cannot be deleted in production,
+				// INVOICE_CAN_NEVER_BE_REMOVED) leaves no audit export data behind
+				if ($this->isCustomerInvoice($object)) {
+					$this->db->query('DELETE FROM '.$this->db->prefix().'navonline_x01_snapshot WHERE fk_facture = '.((int) $object->id));
+				}
+				return $this->billWithdraw($action, $object, $conf);
 			case 'BILL_UNVALIDATE':
 			case 'BILL_CANCEL':
-			case 'BILL_DELETE':
 				return $this->billWithdraw($action, $object, $conf);
 			case 'LINEBILL_INSERT':
 				$this->exactExportEurPrice($action, $object);

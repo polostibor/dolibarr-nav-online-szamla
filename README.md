@@ -86,11 +86,21 @@ Ez a tároló a Dolibarr `htdocs/custom` mappájának tartalma. Két modult tart
 - A tételeket a modul a Dolibarrban már rögzített banki tételekkel párosítja: azonos összeg, ±10 nap, és ha egyértelmű, a partner bankszámlaszáma vagy a közleményben szereplő számlaszám alapján. A havi kivonat a párosított tételeket a kivonatszámmal egyeztetettnek is jelöli, és ellenőrzi a nyitó- és záróegyenleget.
 - A párosítatlan tételeknél (bankköltség, kártyás vásárlás, saját számlák közötti átvezetés) a felkínált rögzítést tételenként te hagyod jóvá.
 
+### Adóhatósági ellenőrzési adatszolgáltatás
+
+*Számlázás → Vevői számlák → Adóhatósági ellenőrzési adatszolgáltatás*. Ezt a funkciót a 23/2014. (VI. 30.) NGM rendelet 11/A. §-a írja elő, és csak adminisztrátor éri el.
+
+- Minden vevői számla jóváhagyásakor a modul elmenti a számla kiállításkori adatait NAV Online Számla invoiceData 3.0 XML-ként, XSD-ellenőrzéssel és ellenőrzőösszeggel. Magánszemély vevőnél a név és a cím is benne van; a NAV-nak beküldött adatban nincs benne. OSS-számlánál a külföldi ÁFA-kulccsal menti. A proformáról nem készül mentés.
+- Kiválasztás kétféleképpen lehetséges: a kibocsátás dátuma szerint, vagy sorozat és számlasorszám-tartomány szerint. Mindkét végpont beletartozik. Letöltés előtt előnézet mutatja a darabszámot, az összegeket és az állapotokat, valamint a sorszám-hézagokat.
+- A letöltött ZIP számlánként egy XML-t tartalmaz, továbbá a `jegyzek.xml` és a `jegyzek.csv` jegyzéket, és ha van mit jelezni, egy `hibalista.txt`-t. Ha egy számla adata hibás vagy hiányzik, vagy hézag van a sorszámokban, a csomag „HIANYOS” jelölést kap. A modul minden exportot naplóz. Az export nem küld adatot a NAV-nak.
+- A funkció bevezetése előtt jóváhagyott számlákhoz a mentést a `php scripts/navonline_x01_backfill.php --run` paranccsal lehet pótolni. Ezek a mentések „nem kiállításkori” jelölést kapnak.
+
 ### Élesítés előtt
 
 - Előbb a **tesztkörnyezetben** (`https://api-test.onlineszamla.nav.gov.hu/invoiceService/v3`) ellenőrizd a beküldést.
 - A tesztkörnyezet `queryTaxpayer` válasza hibás ÁFA-kódokat adhat: ezeket ne másold át éles adatokba.
 - Éles indulás előtt kapcsold be a próbaüzemet (dry-run), állítsd be az élesítés dátumát (`NAVONLINE_GOLIVE_DATE`), és csak ezután válts éles környezetre.
+- Éles induláskor kapcsold be az `INVOICE_CAN_NEVER_BE_REMOVED` beállítást: kiállított számla nem törölhető, csak sztornózható. A próbaszámlákat előtte töröld.
 
 ---
 
@@ -176,8 +186,18 @@ This repository holds the contents of Dolibarr's `htdocs/custom` folder. It cont
 - The module pairs the entries with the bank lines already recorded in Dolibarr: same amount, within ±10 days, and when it's clear-cut, the partner's bank account number or the invoice number in the remittance text. A monthly statement also marks the paired entries as reconciled with the statement number, and it checks the opening and closing balances.
 - For entries that can't be paired (bank charges, card purchases, transfers between your own accounts), the module offers a booking, and you approve each one.
 
+### Tax authority audit export (adóhatósági ellenőrzési adatszolgáltatás)
+
+*Billing → Customer invoices → Adóhatósági ellenőrzési adatszolgáltatás*. This function is required by 23/2014. (VI. 30.) NGM rendelet 11/A. § and keeps that prescribed name. Only administrators can use it.
+
+- Whenever a customer invoice is validated, the module saves its data as issued, as NAV Online Invoice invoiceData 3.0 XML, with an XSD check and a checksum. For a private person customer, the name and address are included, although they are left out of the report sent to NAV. For OSS invoices, the foreign VAT rate is kept. Pro forma invoices aren't saved.
+- You can select invoices by issue date, or by series and invoice number range. Both ends are included. Before you download, a preview shows the number of invoices, the totals, the status of each invoice and any gaps in the numbering.
+- The ZIP contains one XML file per invoice, the manifests `jegyzek.xml` and `jegyzek.csv`, and a `hibalista.txt` if there is anything to report. If an invoice's data is missing or invalid, or the numbering has a gap, the package is marked "HIANYOS" (incomplete). Every export is logged, and nothing is sent to NAV.
+- For invoices validated before this function existed, run `php scripts/navonline_x01_backfill.php --run` to save their data. These saves are marked "not at issue".
+
 ### Before going live
 
 - Test sending in the **test environment** first (`https://api-test.onlineszamla.nav.gov.hu/invoiceService/v3`).
 - The test environment's `queryTaxpayer` may return wrong VAT codes. Don't copy them into production data.
 - Before going live, turn on dry-run, set the go-live date (`NAVONLINE_GOLIVE_DATE`), and only then switch to production.
+- When going live, turn on `INVOICE_CAN_NEVER_BE_REMOVED`: an issued invoice can't be deleted, only reversed with a credit note. Delete the test invoices before that.

@@ -244,6 +244,23 @@ class modNavOnline extends DolibarrModules
 			'target' => '',
 			'user' => 0,
 		);
+		// Billing > Customer invoices > Adóhatósági ellenőrzési adatszolgáltatás (23/2014. NGM rendelet 11/A. §, the name is
+		// prescribed); administrators only
+		$this->menu[$r++] = array(
+			'fk_menu' => 'fk_mainmenu=billing,fk_leftmenu=customers_bills',
+			'type' => 'left',
+			'titre' => 'NavOnlineX01Title',
+			'prefix' => img_picto('', 'bill', 'class="paddingright pictofixedwidth"'),
+			'mainmenu' => 'billing',
+			'leftmenu' => 'navonline_x01',
+			'url' => '/navonline/x01.php',
+			'langs' => 'navonline@navonline',
+			'position' => 1290,
+			'enabled' => 'isModEnabled("navonline") && isModEnabled("invoice")',
+			'perms' => '$user->admin',
+			'target' => '',
+			'user' => 0,
+		);
 		// Bank > Bank statement import (camt.053 statement / account history)
 		$this->menu[$r++] = array(
 			'fk_menu' => 'fk_mainmenu=bank,fk_leftmenu=bank',
