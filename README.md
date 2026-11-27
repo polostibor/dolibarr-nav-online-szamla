@@ -95,6 +95,14 @@ Ez a tároló a Dolibarr `htdocs/custom` mappájának tartalma. Két modult tart
 - A letöltött ZIP számlánként egy XML-t tartalmaz, továbbá a `jegyzek.xml` és a `jegyzek.csv` jegyzéket, és ha van mit jelezni, egy `hibalista.txt`-t. Ha egy számla adata hibás vagy hiányzik, vagy hézag van a sorszámokban, a csomag „HIANYOS” jelölést kap. A modul minden exportot naplóz. Az export nem küld adatot a NAV-nak.
 - A funkció bevezetése előtt jóváhagyott számlákhoz a mentést a `php scripts/navonline_x01_backfill.php --run` paranccsal lehet pótolni. Ezek a mentések „nem kiállításkori” jelölést kapnak.
 
+### Partneradatok a NAV-ból
+
+Új partner rögzítésekor vagy szerkesztésekor a magyar adószám beírása után a modul lekérdezi a NAV Online Számla rendszerét (queryTaxpayer, csak olvasó lekérdezés), és kitölti az üres mezőket: név (a NAV rövid neve), teljes név (alternatív név), teljes adószám, áfacsoport-azonosító, cím, irányítószám, város.
+
+- Ha egy mező már ki van töltve, és a NAV mást ad, a modul nem írja felül: mellé írja a NAV-adatot egy „Átvétel” linkkel.
+- Ha az adószám nem létezik, vagy a NAV szerint nem érvényes, ezt az adószám mező alatt jelzi.
+- Környezet: `NAVONLINE_TAXPAYER_ENVIRONMENT` (alapból éles, a számlabeküldéstől független); kikapcsolás: `NAVONLINE_TAXPAYER_LOOKUP = 0`. Partner-létrehozási jog kell hozzá.
+
 ### EPR és termékdíj
 
 *Beállítás → Modulok → NAV Online Számla → EPR / termékdíj*: díjkódok (EPR vagy termékdíj, KT-kód, díjtétel, mértékegység, érvényesség). A termékkártya *EPR* fülén kapcsolható be a díjkód a termékre, szorzóval (díjalap egységenként, pl. kg/db).
@@ -202,6 +210,14 @@ This repository holds the contents of Dolibarr's `htdocs/custom` folder. It cont
 - You can select invoices by issue date, or by series and invoice number range. Both ends are included. Before you download, a preview shows the number of invoices, the totals, the status of each invoice and any gaps in the numbering.
 - The ZIP contains one XML file per invoice, the manifests `jegyzek.xml` and `jegyzek.csv`, and a `hibalista.txt` if there is anything to report. If an invoice's data is missing or invalid, or the numbering has a gap, the package is marked "HIANYOS" (incomplete). Every export is logged, and nothing is sent to NAV.
 - For invoices validated before this function existed, run `php scripts/navonline_x01_backfill.php --run` to save their data. These saves are marked "not at issue".
+
+### Partner data from NAV
+
+When you create or edit a partner, after you enter a Hungarian tax number the module queries NAV Online Számla (queryTaxpayer, read-only) and fills in the empty fields: name (NAV short name), full name (alias), full tax number, VAT group ID, address, postcode and town.
+
+- If a field is already filled and NAV returns something different, the module doesn't overwrite it: it shows the NAV value next to the field with an "Átvétel" (take over) link.
+- If the tax number doesn't exist or NAV reports it as invalid, a message appears under the tax number field.
+- Environment: `NAVONLINE_TAXPAYER_ENVIRONMENT` (production by default, independent of invoice reporting); turn it off with `NAVONLINE_TAXPAYER_LOOKUP = 0`. Requires the right to create partners.
 
 ### EPR and product fee
 

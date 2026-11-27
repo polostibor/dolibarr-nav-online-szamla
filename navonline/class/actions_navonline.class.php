@@ -410,6 +410,64 @@ class ActionsNavonline
 			print "<script>\njQuery(function ($) { $(".json_encode($sel).").each(function () { var w = $(this).closest('div.menu_contenu, div.divButAction'); (w.length ? w : $(this)).hide(); }); });\n</script>\n";
 		}
 
+		// Partner card (create / edit): after the Hungarian tax number, the NAV taxpayer data fills the empty fields
+		// (name, full tax number, VAT group id, address); a field already filled differently gets a "NAV: ... Átvétel" hint
+		if (empty($GLOBALS['navonline_taxpayer_js']) && preg_match('#/societe/card\.php$#', (string) ($_SERVER['PHP_SELF'] ?? '')) && in_array(GETPOST('action', 'aZ09'), array('create', 'edit', 'add', 'update'), true)) {
+			dol_include_once('/navonline/class/navonlinetaxpayer.class.php');
+			global $user;
+			if (class_exists('NavOnlineTaxpayer') && NavOnlineTaxpayer::enabled() && $user->hasRight('societe', 'creer')) {
+				$GLOBALS['navonline_taxpayer_js'] = 1;
+				$hu = (string) dol_getIdFromCode($this->db, 'HU', 'c_country', 'code', 'rowid');
+				$cfg = array('url' => dol_buildpath('/navonline/ajax/taxpayer.php', 1), 'token' => currentToken(), 'hu' => $hu, 'env' => NavOnlineTaxpayer::environment() === 'prod' ? 'éles' : 'teszt');
+				print "\n<!-- NavOnline: partner data from NAV by tax number -->\n<script>\njQuery(function ($) {\n";
+				print "\tvar cfg = ".json_encode($cfg).", last = '';\n";
+				print <<<'JS'
+	var tax = $('#idprof1');
+	if (!tax.length) { return; }
+	var box = $('<div id="navonline-taxpayer" class="small" style="margin-top:3px"></div>').insertAfter(tax);
+	function digits(v) { return String(v || '').replace(/\D/g, ''); }
+	function esc(v) { return $('<span>').text(v).html(); }
+	function norm(v) { return String(v || '').toLowerCase().replace(/[\s.,]+/g, ' ').trim(); }
+	function fill(sel, value, label, done) {
+		var el = $(sel);
+		if (!value || !el.length) { return; }
+		var cur = $.trim(el.val() || '');
+		if (cur === '') { el.val(value).trigger('change'); done.push(label); return; }
+		if (norm(cur) === norm(value)) { return; }
+		var hint = $('<div class="navonline-taxpayer-hint small opacitymedium">NAV: ' + esc(value) + ' <a href="#">Átvétel</a></div>');
+		hint.find('a').on('click', function (e) { e.preventDefault(); el.val(value).trigger('change'); hint.remove(); });
+		el.after(hint);
+	}
+	function lookup() {
+		var d = digits(tax.val()), c = $('#selectcountry_id');
+		if ((d.length !== 8 && d.length !== 11) || (c.length && cfg.hu && String(c.val()) !== String(cfg.hu))) { return; }
+		if (d.substr(0, 8) === last) { return; }
+		last = d.substr(0, 8);
+		$('.navonline-taxpayer-hint').remove();
+		box.removeClass('error warning').addClass('opacitymedium').text('NAV-lekérdezés…');
+		$.post(cfg.url, { taxnumber: d, token: cfg.token }, null, 'json').done(function (r) {
+			box.removeClass('opacitymedium');
+			if (!r || r.status === 'error') { box.addClass('error').text('NAV: ' + ((r && r.message) || 'a lekérdezés nem sikerült')); last = ''; return; }
+			if (r.status === 'notfound') { box.addClass('warning').text('A NAV szerint nincs ilyen adószám.'); return; }
+			if (r.status === 'invalid') { box.addClass('warning').text('A NAV szerint az adószám nem érvényes (törölt vagy felfüggesztett).'); return; }
+			var done = [];
+			if (r.tax_number && digits(r.tax_number).indexOf(digits(tax.val())) === 0 && tax.val() !== r.tax_number) { tax.val(r.tax_number).trigger('change'); done.push('adószám'); }
+			fill('#name', r.short_name || r.name, 'név', done);
+			if (r.short_name && r.name && norm(r.short_name) !== norm(r.name)) { fill('#name_alias_input', r.name, 'teljes név', done); }
+			fill('#idprof3', r.group_id, 'csoportazonosító', done);
+			fill('#address', r.address, 'cím', done);
+			fill('#zipcode', r.zip, 'irányítószám', done);
+			fill('#town', r.town, 'város', done);
+			box.html('NAV (' + esc(cfg.env) + '): <b>' + esc(r.name || r.short_name || '') + '</b>' + (r.incorporation === 'SELF_EMPLOYED' ? ' (egyéni vállalkozó)' : '')
+				+ (done.length ? ' – kitöltve: ' + esc(done.join(', ')) : ' – nincs üres mező, amit ki kellene tölteni'));
+		}).fail(function () { box.removeClass('opacitymedium').addClass('error').text('NAV: a lekérdezés nem sikerült'); last = ''; });
+	}
+	tax.on('change blur', lookup);
+JS;
+				print "\n});\n</script>\n";
+			}
+		}
+
 		// Customer / supplier payment form: payment mode "Készpénz" (LIQ) -> the cash account (NAVONLINE_CASH_BANK_ACCOUNT),
 		// another mode -> back to a bank account. Dolibarr accepts only LIQ lines on a cash account.
 		$cashAcc = getDolGlobalInt('NAVONLINE_CASH_BANK_ACCOUNT');
