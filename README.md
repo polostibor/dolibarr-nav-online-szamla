@@ -95,6 +95,13 @@ Ez a tároló a Dolibarr `htdocs/custom` mappájának tartalma. Két modult tart
 - A letöltött ZIP számlánként egy XML-t tartalmaz, továbbá a `jegyzek.xml` és a `jegyzek.csv` jegyzéket, és ha van mit jelezni, egy `hibalista.txt`-t. Ha egy számla adata hibás vagy hiányzik, vagy hézag van a sorszámokban, a csomag „HIANYOS” jelölést kap. A modul minden exportot naplóz. Az export nem küld adatot a NAV-nak.
 - A funkció bevezetése előtt jóváhagyott számlákhoz a mentést a `php scripts/navonline_x01_backfill.php --run` paranccsal lehet pótolni. Ezek a mentések „nem kiállításkori” jelölést kapnak.
 
+### Export kilépési igazolások
+
+*Számlázás → Vevői számlák → Export kilépési igazolások*: az exportszámlák (EAM, Áfa tv. 98. §) listája a 90 napos határidővel. A számla *Kiviteli MRN* és *Kilépés dátuma* mezője itt vagy a számlán rögzíthető.
+
+- *EU-ellenőrzés*: a sorban és a számlakártyán lévő gomb lekérdezi az MRN állapotát az Európai Bizottság MRN-nyomkövetőjéből. Az állapottáblát és a kilépés országát, dátumát mutatja. Ha minden MRN kilépett, egy gombbal be lehet írni a kilépés dátumát; magától nem írja be.
+- Tájékoztató adat, nem a kilépés igazolása. Az EU kb. 100 nappal az utolsó üzenet után törli. Csak gombnyomásra kérdez, kattintásonként egy számlát; az EU felé csak az MRN megy ki.
+
 ### Partneradatok a NAV-ból
 
 Új partner rögzítésekor vagy szerkesztésekor a magyar adószám beírása után a modul lekérdezi a NAV Online Számla rendszerét (queryTaxpayer, csak olvasó lekérdezés), és kitölti az üres mezőket: név (a NAV rövid neve), teljes név (alternatív név), teljes adószám, áfacsoport-azonosító, cím, irányítószám, város.
@@ -210,6 +217,13 @@ This repository holds the contents of Dolibarr's `htdocs/custom` folder. It cont
 - You can select invoices by issue date, or by series and invoice number range. Both ends are included. Before you download, a preview shows the number of invoices, the totals, the status of each invoice and any gaps in the numbering.
 - The ZIP contains one XML file per invoice, the manifests `jegyzek.xml` and `jegyzek.csv`, and a `hibalista.txt` if there is anything to report. If an invoice's data is missing or invalid, or the numbering has a gap, the package is marked "HIANYOS" (incomplete). Every export is logged, and nothing is sent to NAV.
 - For invoices validated before this function existed, run `php scripts/navonline_x01_backfill.php --run` to save their data. These saves are marked "not at issue".
+
+### Export exit proofs
+
+*Billing → Customer invoices → Export kilépési igazolások*: the export invoices (EAM, Áfa tv. 98. §) with their 90-day deadline. You enter the invoice's *Kiviteli MRN* (export MRN) and *Kilépés dátuma* (date of exit) fields here or on the invoice.
+
+- *EU-ellenőrzés* (EU check): the button in the row and on the invoice card queries the MRN status at the European Commission's MRN follow-up service. It shows the status table and the country and date of exit. If every MRN has exited, one button enters the date of exit; it's never entered automatically.
+- This is information only, not the proof of exit. The EU removes the data about 100 days after the last message. It queries only when you click, one invoice per click, and sends only the MRN to the EU.
 
 ### Partner data from NAV
 

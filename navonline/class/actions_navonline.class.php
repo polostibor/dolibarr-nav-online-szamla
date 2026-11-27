@@ -679,6 +679,32 @@ JS;
 	}
 
 	/**
+	 * Customer invoice card: "EU-ellenőrzés (MRN)" button when the validated invoice has an export MRN: opens the
+	 * status of the MRN(s) at the EU MRN follow-up on the export proof page (export_proof.php), which leads back here.
+	 *
+	 * @param array<string,mixed> $parameters Hook parameters
+	 * @param CommonObject        $object     Invoice
+	 * @return void
+	 */
+	private function navMrnCheckButton($parameters, $object)
+	{
+		global $user, $langs;
+
+		if (!in_array('invoicecard', explode(':', (string) ($parameters['context'] ?? '')), true) || ($object->element ?? '') !== 'facture' || (int) ($object->status ?? $object->statut ?? 0) <= 0 || !$user->hasRight('facture', 'lire')) {
+			return;
+		}
+		dol_include_once('/navonline/class/navonlinemrn.class.php');
+		$mrns = array_filter(array_map('trim', explode(',', (string) ($object->array_options['options_navonline_export_mrn'] ?? ''))));
+		if (!$mrns || !class_exists('NavOnlineMrn') || count(array_filter($mrns, array('NavOnlineMrn', 'valid'))) !== count($mrns)) {
+			return;
+		}
+		$langs->load('navonline@navonline');
+		$back = DOL_URL_ROOT.'/compta/facture/card.php?facid='.((int) $object->id);
+		$url = dol_buildpath('/navonline/export_proof.php', 1).'?action=mrncheck&id='.((int) $object->id).'&filter=all&backtopage='.urlencode($back);
+		print '<a class="butAction" href="'.dol_escape_htmltag($url).'" title="'.dol_escape_htmltag($langs->trans('NavOnlineMrnCheckHelp')).'">'.dol_escape_htmltag($langs->trans('NavOnlineMrnCheck')).' (MRN)</a>';
+	}
+
+	/**
 	 * "Visszáru bevételezése" / "Visszáru kiadása" button on a validated credit note with product lines; once done,
 	 * a disabled button with the date.
 	 *
@@ -690,6 +716,7 @@ JS;
 	 */
 	public function addMoreActionsButtons($parameters, &$object, &$action, $hookmanager)
 	{
+		$this->navMrnCheckButton($parameters, $object);
 		if (!$this->navReturnApplies($parameters, $object)) {
 			return 0;
 		}
