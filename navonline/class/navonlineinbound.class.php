@@ -772,6 +772,11 @@ class NavOnlineInbound
 		$kind = self::modificationKind($row, $inv);
 		$orig = $inv['originalInvoiceNumber'] ?: (string) $row->original_invoice_number;
 		$origId = ($kind !== '') ? $this->findOriginal($orig, (int) $socid) : 0;
+		// Modification of data only (delivery date, customer data...: no item and no amount): no supplier invoice, the
+		// original is annotated (and its dates follow while it is a draft)
+		if ($row->operation === 'MODIFY' && self::isDataOnly($inv)) {
+			return $this->recordDataOnly($row, $inv, $origId, (int) $socid, $orig);
+		}
 		if ($kind === 'credit') {
 			if (!$origId && !$standalone) {
 				$this->errors[] = 'Ez '.($row->operation === 'STORNO' ? 'sztornó' : 'csökkentő módosító').' számla: előbb az eredeti számlát ('.$orig.') kell rögzíteni, vagy – ha az a Dolibarr előtti időszakból való – jelöld be a „Rögzítés eredeti számla nélkül” lehetőséget';
@@ -996,6 +1001,72 @@ class NavOnlineInbound
 			return -1;
 		}
 		return 1;
+	}
+
+	/**
+	 * @param array<string,mixed> $inv Parsed invoice data
+	 * @return bool The document changes data only: no line with an amount and zero totals (NAV allows a modification
+	 *              that only corrects e.g. the delivery date or the customer data)
+	 */
+	public static function isDataOnly($inv)
+	{
+		if ((float) $inv['netAmount'] != 0 || (float) $inv['vatAmount'] != 0 || (float) $inv['netAmountHuf'] != 0 || (float) $inv['vatAmountHuf'] != 0) {
+			return false;
+		}
+		foreach ((array) $inv['lines'] as $l) {
+			if ((float) $l['net'] != 0 || (float) $l['vat'] != 0) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Data-only modification: linked to its original supplier invoice, which gets a note of what changed. A draft
+	 * original takes the new teljesítés dátuma / payment due date; a validated one is not changed (the VAT deduction
+	 * period may be concerned: a warning for the user).
+	 *
+	 * @param object              $row    Row
+	 * @param array<string,mixed> $inv    Parsed invoice data
+	 * @param int                 $origId Original supplier invoice (0 = not in Dolibarr)
+	 * @param int                 $socid  Supplier
+	 * @param string              $orig   Original invoice number
+	 * @return int Original supplier invoice id, <0 on error
+	 */
+	private function recordDataOnly($row, $inv, $origId, $socid, $orig)
+	{
+		if ($origId <= 0) {
+			$this->errors[] = 'Adatmódosító okirat (tétel és összeg nélkül, pl. teljesítési dátum vagy vevőadat javítása): nincs mit rögzíteni, mert az eredeti számla ('.$orig.') nincs a Dolibarrban. Ha az eredetit később rögzíted, ezt utána rögzítsd; ha a Dolibarr előtti időszakból való, jelöld „Kihagyás”-sal.';
+			return -1;
+		}
+		$p = $this->db->prefix();
+		$o = $this->db->fetch_object($this->db->query('SELECT fk_statut, date_pointoftax, date_lim_reglement FROM '.$p.'facture_fourn WHERE rowid = '.((int) $origId)));
+		$changes = $set = array();
+		foreach (array(array('deliveryDate', 'date_pointoftax', 'teljesítés dátuma'), array('paymentDate', 'date_lim_reglement', 'fizetési határidő')) as $c) {
+			$new = (string) $inv[$c[0]];
+			$old = !empty($o->{$c[1]}) ? dol_print_date($this->db->jdate($o->{$c[1]}), '%Y-%m-%d') : '';
+			if ($new !== '' && $new !== $old) {
+				$changes[] = $c[2].': '.($old !== '' ? $old : '-').' → '.$new;
+				$set[] = $c[1]." = '".$this->db->idate(dol_stringtotime($new.' 12:00:00', 0))."'";
+			}
+		}
+		$draft = $o && (int) $o->fk_statut === 0;
+		$note = 'NAV adatmódosítás '.$row->invoice_number.($inv['modificationIndex'] !== '' ? ' #'.$inv['modificationIndex'] : '').': '
+			.($changes ? implode('; ', $changes).($draft ? ' (átvezetve)' : ' (nincs átvezetve, a számla jóvá van hagyva)') : 'tétel és összeg nélkül (pl. vevő- vagy egyéb fejadat javítása)');
+		$this->db->begin();
+		$sql = 'UPDATE '.$p."facture_fourn SET note_private = CONCAT(COALESCE(note_private, ''), '".$this->db->escape("\n".$note)."')".($draft && $set ? ', '.implode(', ', $set) : '').' WHERE rowid = '.((int) $origId);
+		if (!$this->db->query($sql)) {
+			$this->db->rollback();
+			$this->errors[] = $this->db->lasterror();
+			return -1;
+		}
+		$this->markRecorded($row, $origId, $socid, dol_trunc($note, 250, 'right', 'UTF-8', 1));
+		$this->db->commit();
+		$this->warnings[] = 'Adatmódosító okirat: nem készült új szállítói számla, a(z) '.$orig.' számlához kapcsoltam. '.$note;
+		if ($changes && !$draft) {
+			$this->warnings[] = 'A(z) '.$orig.' számla már jóvá van hagyva, az adatait nem módosítottam. Ha a teljesítés dátuma változott, ellenőrizd a könyvelővel az ÁFA-levonás időszakát.';
+		}
+		return $origId;
 	}
 
 	/**

@@ -143,6 +143,12 @@ class InterfaceNavOnline extends DolibarrTriggers
 				return $this->exactExportEurPrice($action, $object);
 			case 'STOCK_MOVEMENT':
 				return $this->plainStockMovementLabel($object);
+			case 'BILL_SUPPLIER_VALIDATE':
+				// Supplier credit note recorded from NAV: reduces the remain to pay of its original invoice
+				if (is_object($object) && ($object->element ?? '') === 'invoice_supplier' && !empty($object->id)) {
+					$this->applyNavSupplierCredits((int) $object->type === 2 ? (int) $object->fk_facture_source : (int) $object->id, $user);
+				}
+				return 0;
 		}
 
 		return 0;
@@ -171,6 +177,116 @@ class InterfaceNavOnline extends DolibarrTriggers
 		$this->errors[] = $langs->trans($type === Facture::TYPE_REPLACEMENT ? 'NavOnlineErrReplacementType' : 'NavOnlineErrSituationType');
 		$this->error = end($this->errors);
 		return -1;
+	}
+
+	/**
+	 * Supplier credit notes recorded from NAV (llx_navonline_inbound, STORNO / reducing MODIFY) of a supplier invoice:
+	 * once both the credit note and its original are validated, the credit note is used on the original as Dolibarr does
+	 * by hand ("Convert into discount", then "use" it on the invoice: fourn/facture/card.php): one discount per VAT rate
+	 * from the credit note, which is closed as paid, applied to the original; the original is closed as paid when nothing
+	 * is left to pay (STORNO). Called when either of them is validated. Not when the credit is larger than what is left
+	 * to pay (the original already paid, partly or fully: the supplier owes a refund) - then a warning. Credit notes
+	 * entered by hand are left alone.
+	 *
+	 * @param int  $sourceId Original supplier invoice
+	 * @param User $user     User
+	 * @return int Number of credit notes applied
+	 */
+	private function applyNavSupplierCredits($sourceId, $user)
+	{
+		global $langs;
+
+		if ($sourceId <= 0) {
+			return 0;
+		}
+		require_once DOL_DOCUMENT_ROOT.'/fourn/class/fournisseur.facture.class.php';
+		require_once DOL_DOCUMENT_ROOT.'/core/class/discount.class.php';
+		$p = $this->db->prefix();
+		$src = new FactureFournisseur($this->db);
+		if ($src->fetch($sourceId) <= 0 || (int) $src->status !== FactureFournisseur::STATUS_VALIDATED || !empty($src->paid)) {
+			return 0;	// draft (applied when it is validated), already paid or abandoned
+		}
+		// Validated NAV credit notes of this original, not yet converted into a discount
+		$sql = 'SELECT f.rowid FROM '.$p.'facture_fourn f JOIN '.$p.'navonline_inbound n ON n.fk_facture_fourn = f.rowid';
+		$sql .= ' WHERE f.fk_facture_source = '.((int) $sourceId).' AND f.type = '.FactureFournisseur::TYPE_CREDIT_NOTE.' AND f.fk_statut = '.FactureFournisseur::STATUS_VALIDATED.' AND f.paye = 0';
+		$sql .= ' AND NOT EXISTS (SELECT 1 FROM '.$p.'societe_remise_except r WHERE r.fk_invoice_supplier_source = f.rowid)';
+		$sql .= ' GROUP BY f.rowid ORDER BY f.rowid';
+		$res = $this->db->query($sql);
+		if (!$res) {
+			return $this->softFail('supplier credit lookup failed: '.$this->db->lasterror());
+		}
+		$ids = array();
+		while ($o = $this->db->fetch_object($res)) {
+			$ids[] = (int) $o->rowid;
+		}
+		$langs->load('navonline@navonline');
+		$applied = 0;
+		foreach ($ids as $cnId) {
+			$cn = new FactureFournisseur($this->db);
+			if ($cn->fetch($cnId) <= 0) {
+				continue;
+			}
+			$remain = (float) price2num($src->getRemainToPay(0), 'MT');
+			$credit = (float) price2num(abs((float) $cn->total_ttc), 'MT');
+			if ($credit <= 0) {
+				continue;
+			}
+			if ($credit > $remain + 0.005) {
+				setEventMessages($langs->trans('NavOnlineSupplierCreditNotApplied', $cn->ref_supplier, price($credit), $src->ref_supplier, price($remain)), null, 'warnings');
+				dol_syslog(__METHOD__.' credit note '.$cn->ref.' ('.$credit.') not applied to '.$src->ref.': remain to pay '.$remain, LOG_WARNING);
+				continue;
+			}
+			// One discount per VAT rate (a credit note may mix lines of both signs: each rate keeps its sign)
+			$sum = array();
+			foreach ($cn->lines as $l) {
+				if ((int) $l->product_type >= 9 || (float) $l->total_ht == 0) {
+					continue;
+				}
+				$k = $l->tva_tx.($l->vat_src_code ? ' ('.$l->vat_src_code.')' : '');
+				foreach (array('total_ht', 'total_tva', 'total_ttc', 'multicurrency_total_ht', 'multicurrency_total_tva', 'multicurrency_total_ttc') as $f) {
+					$sum[$k][$f] = ($sum[$k][$f] ?? 0) + (float) $l->$f;
+				}
+			}
+			$discounts = array();
+			foreach ($sum as $k => $a) {
+				$d = new DiscountAbsolute($this->db);
+				$d->description = '(CREDIT_NOTE)';
+				$d->discount_type = 1;	// supplier
+				$d->fk_soc = $d->socid = $cn->socid;
+				$d->fk_invoice_supplier_source = $cn->id;
+				$d->multicurrency_code = $cn->multicurrency_code;
+				$d->multicurrency_tx = $cn->multicurrency_tx;
+				$d->amount_ht = -$a['total_ht'];
+				$d->amount_tva = -$a['total_tva'];
+				$d->amount_ttc = -$a['total_ttc'];
+				$d->multicurrency_amount_ht = $d->multicurrency_total_ht = -$a['multicurrency_total_ht'];
+				$d->multicurrency_amount_tva = $d->multicurrency_total_tva = -$a['multicurrency_total_tva'];
+				$d->multicurrency_amount_ttc = $d->multicurrency_total_ttc = -$a['multicurrency_total_ttc'];
+				$d->vat_src_code = preg_match('/\((.*)\)/', $k, $m) ? $m[1] : '';
+				$d->tva_tx = abs((float) preg_replace('/\s*\(.*\)/', '', $k));
+				if ($d->create($user) < 0) {
+					return $this->softFail('supplier credit discount failed: '.$d->error);
+				}
+				$discounts[] = $d;
+			}
+			if ($cn->setPaid($user) < 0) {
+				return $this->softFail('supplier credit note close failed: '.$cn->error);
+			}
+			foreach ($discounts as $d) {
+				if ($d->link_to_invoice(0, $src->id) < 0) {
+					return $this->softFail('supplier credit use failed: '.$d->error);
+				}
+			}
+			$applied++;
+			$src->fetch($src->id);
+			$left = (float) price2num($src->getRemainToPay(0), 'MT');
+			if (abs($left) < 0.005) {
+				$src->setPaid($user, '', 'NAV: '.$cn->ref_supplier);
+			}
+			setEventMessages($langs->trans('NavOnlineSupplierCreditApplied', $cn->ref_supplier, price($credit), $src->ref_supplier, price($left)), null, 'mesgs');
+			dol_syslog(__METHOD__.' credit note '.$cn->ref.' ('.$credit.') used on '.$src->ref.', left to pay '.$left);
+		}
+		return $applied;
 	}
 
 	/**

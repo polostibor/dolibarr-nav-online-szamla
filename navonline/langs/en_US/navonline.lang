@@ -339,3 +339,6 @@ NavOnlineDijbekeroCreateInvoice = Create an invoice from the order
 NavOnlineExtraNonVat = Not a VAT subject (no tax number)
 NavOnlineExtraNonVatHelp = Domestic organisation that is not a VAT subject and has no tax number (not a private person). It is reported to NAV as an "other" customer, without tax number. If it has a tax number, enter that instead and leave this unticked.
 NavOnlineRateNotFound = No MNB exchange rate found (%s, %s): the rate of the invoice was not changed. Check the rate before the invoice is sent to NAV.
+# Supplier credit note (recorded from NAV) used on the original invoice
+NavOnlineSupplierCreditApplied = Supplier credit note %s (%s HUF) was deducted from what is still owed on invoice %s; still owed: %s HUF.
+NavOnlineSupplierCreditNotApplied = Supplier credit note %s (%s HUF) is larger than what is still owed on invoice %s (%s HUF), because the original was already (partly) paid: the supplier owes a refund. Handle the credit note by hand (record the refund or convert it into a discount).

@@ -339,3 +339,6 @@ NavOnlineDijbekeroCreateInvoice = Számla készítése a rendelésből
 NavOnlineExtraNonVat = Nem ÁFA-alany (adószám nélküli szervezet)
 NavOnlineExtraNonVatHelp = Belföldi szervezet, amely nem ÁFA-alany és nincs adószáma (nem magánszemély). A NAV-adatszolgáltatásban „egyéb” vevőként, adószám nélkül szerepel. Ha van adószáma, azt kell megadni, és ezt nem kell bejelölni.
 NavOnlineRateNotFound = Nem található MNB-árfolyam (%s, %s): a számla árfolyama nem változott. Ellenőrizd az árfolyamot, mielőtt a számla a NAV-hoz kerül.
+# Szállítói jóváírás (NAV-ból rögzített) felhasználása az eredeti számlán
+NavOnlineSupplierCreditApplied = A(z) %s szállítói jóváírás (%s Ft) levonva a(z) %s számla tartozásából; fennmaradó tartozás: %s Ft.
+NavOnlineSupplierCreditNotApplied = A(z) %s szállítói jóváírás (%s Ft) nagyobb, mint a(z) %s számla fennmaradó tartozása (%s Ft), mert az eredetit már (részben) kifizették: a szállító visszautalással tartozik. A jóváírást kézzel kezeld (visszatérítés rögzítése vagy kedvezménnyé alakítás).

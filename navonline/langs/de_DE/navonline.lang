@@ -191,3 +191,6 @@ NavOnlineDijbekeroCreateInvoice = Rechnung aus dem Auftrag erstellen
 NavOnlineExtraNonVat = Kein Umsatzsteuersubjekt (ohne Steuernummer)
 NavOnlineExtraNonVatHelp = Inländische Organisation, die kein Umsatzsteuersubjekt ist und keine Steuernummer hat (keine Privatperson). Sie wird an die NAV als „sonstiger“ Kunde ohne Steuernummer gemeldet. Hat sie eine Steuernummer, diese eintragen und dieses Feld nicht ankreuzen.
 NavOnlineRateNotFound = Kein MNB-Wechselkurs gefunden (%s, %s): der Kurs der Rechnung wurde nicht geändert. Bitte den Kurs prüfen, bevor die Rechnung an die NAV gesendet wird.
+# Lieferantengutschrift (aus der NAV erfasst) auf der ursprünglichen Rechnung verwendet
+NavOnlineSupplierCreditApplied = Die Lieferantengutschrift %s (%s HUF) wurde vom offenen Betrag der Rechnung %s abgezogen; noch offen: %s HUF.
+NavOnlineSupplierCreditNotApplied = Die Lieferantengutschrift %s (%s HUF) ist höher als der offene Betrag der Rechnung %s (%s HUF), weil die ursprüngliche Rechnung bereits (teilweise) bezahlt wurde: der Lieferant schuldet eine Rückzahlung. Die Gutschrift bitte manuell bearbeiten (Rückzahlung erfassen oder in einen Rabatt umwandeln).
