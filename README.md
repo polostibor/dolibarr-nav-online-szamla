@@ -59,6 +59,8 @@ Ez a tároló a Dolibarr `htdocs/custom` mappájának tartalma. Két modult tart
 6. **Modulok bekapcsolása.** *Beállítás → Modulok/Alkalmazások*: kapcsold be a **NavOnline** (és szükség esetén a **Mentes**) modult. A bekapcsolás létrehozza az adatbázistáblákat (`sql/` mappa) és az ütemezett feladatokat.
 
 7. **Modulbeállítások** (*NavOnline → Beállítás*): szoftveradatok (softwareId, név, verzió, fejlesztő), számla megjelenési formája, pénzforgalmi elszámolás, kisadózó, XSD-mappa, riasztási e-mail címek, környezet (teszt / éles), próbaüzem (dry-run). Ugyanitt kipróbálható a kapcsolat és a riasztó e-mail.
+   - Devizás számla jóváhagyásakor a modul a teljesítés napján érvényes MNB-árfolyamot állítja be (Áfa tv. 80. §; közösségen belüli értékesítésnél a számla keltéét). Kikapcsolás: `NAVONLINE_RATE_AT_TAX_POINT = 0` (*Beállítás → Egyéb beállítások*).
+   - Adószám nélküli, nem ÁFA-alany belföldi szervezetnél a partner lapján jelöld be a **Nem ÁFA-alany (adószám nélküli szervezet)** mezőt.
 
 8. **Ütemezett feladatok** (*Beállítás → Ütemezett feladatok*):
    - `NavOnlineSendQueue` – beküldési sor feldolgozása 5 percenként (alapból kikapcsolva),
@@ -140,6 +142,8 @@ This repository holds the contents of Dolibarr's `htdocs/custom` folder. It cont
 6. **Enable the modules.** In *Setup → Modules/Applications*, enable **NavOnline**, and **Mentes** if you need it. Enabling NavOnline creates its database tables (from the `sql/` folder) and its scheduled jobs.
 
 7. **Configure the module** (*NavOnline → Setup*): software data (softwareId, name, version, developer), invoice appearance, cash accounting, small business (KATA), XSD folder, alert e-mail addresses, environment (test / production) and dry-run mode. You can also test the connection and the alert e-mail from this page.
+   - When a foreign currency invoice is validated, the module sets the MNB rate valid on the date of supply (Áfa tv. 80. §; for an intra-Community supply, the rate of the invoice date). To turn this off, set `NAVONLINE_RATE_AT_TAX_POINT = 0` (*Setup → Other setup*).
+   - For a domestic organisation that has no tax number and isn't a VAT subject, tick **Not a VAT subject (no tax number)** on the third party card.
 
 8. **Scheduled jobs** (*Setup → Scheduled jobs*):
    - `NavOnlineSendQueue` processes the send queue every 5 minutes. It is disabled by default.

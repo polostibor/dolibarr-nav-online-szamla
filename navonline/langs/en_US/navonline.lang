@@ -335,3 +335,7 @@ NavOnlineErrSituationType = A situation invoice cannot be sent to NAV with this 
 NavOnlineErrProformaEnqueue = Proforma: not an invoice, so it cannot be sent to NAV.
 NavOnlineDijbekeroNoInvoice = A díjbekérő (payment request) was made for this order, but there is no validated deposit or standard invoice yet. The díjbekérő is not an invoice and is not reported to NAV: if the customer has paid, a deposit invoice has to be issued for the payment.
 NavOnlineDijbekeroCreateInvoice = Create an invoice from the order
+# Customer: organisation without tax number, not a VAT subject; rate on the tax point day
+NavOnlineExtraNonVat = Not a VAT subject (no tax number)
+NavOnlineExtraNonVatHelp = Domestic organisation that is not a VAT subject and has no tax number (not a private person). It is reported to NAV as an "other" customer, without tax number. If it has a tax number, enter that instead and leave this unticked.
+NavOnlineRateNotFound = No MNB exchange rate found (%s, %s): the rate of the invoice was not changed. Check the rate before the invoice is sent to NAV.

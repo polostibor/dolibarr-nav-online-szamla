@@ -104,6 +104,7 @@ switch ($cmd) {
 	case '--status':
 		$n = $sender->checkSent();
 		$a = $sender->checkAnnulments();
+		$sender->sendAlerts();
 		$rc = ($n < 0 || $a < 0) ? 1 : 0;
 		$n = max(0, $n) + max(0, $a);
 		echo "Finalized: ".max(0, $n)."\n";

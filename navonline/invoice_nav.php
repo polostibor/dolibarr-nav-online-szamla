@@ -130,6 +130,7 @@ if ($object->id > 0) {
 
 	if ($canSend && $action === 'checkstatus' && $row) {
 		$n = $sender->checkSent(1, (int) $row->rowid);
+		$sender->sendAlerts();	// a refusal or a NAV warning found now is alerted too (the row is final, the cron will not see it)
 		setEventMessages($langs->trans('NavOnlineStatusChecked'), array_merge($sender->log, $sender->errors), $n < 0 ? 'errors' : 'mesgs');
 		header('Location: '.$_SERVER['PHP_SELF'].'?id='.$object->id);
 		exit;

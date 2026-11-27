@@ -187,3 +187,7 @@ NavOnlineErrSituationType = Eine Abschlagsrechnung nach Baufortschritt kann mit 
 NavOnlineErrProformaEnqueue = Proforma: keine Rechnung, daher nicht an die NAV sendbar.
 NavOnlineDijbekeroNoInvoice = Zu diesem Auftrag wurde eine Zahlungsaufforderung (Díjbekérő) erstellt, aber noch keine freigegebene Anzahlungs- oder normale Rechnung. Die Zahlungsaufforderung ist keine Rechnung und wird nicht an die NAV gemeldet: hat der Kunde bereits bezahlt, ist für die Zahlung eine Anzahlungsrechnung auszustellen.
 NavOnlineDijbekeroCreateInvoice = Rechnung aus dem Auftrag erstellen
+# Kunde: Organisation ohne Steuernummer, kein Umsatzsteuersubjekt; Kurs am Tag der Steuerentstehung
+NavOnlineExtraNonVat = Kein Umsatzsteuersubjekt (ohne Steuernummer)
+NavOnlineExtraNonVatHelp = Inländische Organisation, die kein Umsatzsteuersubjekt ist und keine Steuernummer hat (keine Privatperson). Sie wird an die NAV als „sonstiger“ Kunde ohne Steuernummer gemeldet. Hat sie eine Steuernummer, diese eintragen und dieses Feld nicht ankreuzen.
+NavOnlineRateNotFound = Kein MNB-Wechselkurs gefunden (%s, %s): der Kurs der Rechnung wurde nicht geändert. Bitte den Kurs prüfen, bevor die Rechnung an die NAV gesendet wird.

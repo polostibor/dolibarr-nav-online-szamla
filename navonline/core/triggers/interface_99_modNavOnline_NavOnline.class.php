@@ -118,7 +118,9 @@ class InterfaceNavOnline extends DolibarrTriggers
 				$this->deliveryDateDefault($object);
 				// The rate may have changed on the draft (setMulticurrencyRate leaves deduction lines alone): before the
 				// PDF and the NAV XML are made, the deposit deductions are recalculated at the final invoice rate again
-				if ($this->isCustomerInvoice($object) && $this->depositDeductionsAtInvoiceRate((int) $object->id) > 0) {
+				// Exchange rate of the day the tax liability arises (Áfa tv. 80. §), then the deposit deductions at it
+				$rateChanged = $this->isCustomerInvoice($object) && $this->invoiceRateAtTaxPoint($object) > 0;
+				if ($this->isCustomerInvoice($object) && ($this->depositDeductionsAtInvoiceRate((int) $object->id) > 0 || $rateChanged)) {
 					$this->reloadInvoiceAmounts($object);
 				}
 				$this->bankAccountForCurrency($object, $conf);
@@ -327,6 +329,130 @@ class InterfaceNavOnline extends DolibarrTriggers
 			}
 		}
 		return $changed;
+	}
+
+	/**
+	 * Foreign currency invoice: at validation, the MNB rate valid on the day the tax liability arises (Áfa tv. 80. §).
+	 * Dolibarr sets the rate when the draft is created (MULTICURRENCY_USE_RATE_ON_DOCUMENT_DATE) and keeps it when the
+	 * invoice date moves to the validation day (FAC_FORCE_DATE_VALIDATION), so a draft left for days, or a supply made
+	 * before, has the rate of another day. Day used: the teljesítés dátuma (date_pointoftax, set just before), else the
+	 * invoice date; an intra-Community supply (only KBAET / KBAUK lines) uses the invoice date (Áfa tv. 63. §). Rate:
+	 * the MNB rate of that day, else the last one published before (weekend, holiday, or not yet published that day),
+	 * from the rates synced by NavOnlineMnb, else read from MNB. The amounts in the invoice currency are kept, the HUF
+	 * amounts of the lines and of the invoice are recalculated. Not for credit notes (rate of the original invoice,
+	 * creditNoteSourceRate()). Off with NAVONLINE_RATE_AT_TAX_POINT = 0.
+	 *
+	 * @param Facture $object Invoice being validated
+	 * @return int 1 = rate changed, 0 = nothing done
+	 */
+	private function invoiceRateAtTaxPoint($object)
+	{
+		global $mysoc, $langs;
+
+		if (!getDolGlobalInt('NAVONLINE_RATE_AT_TAX_POINT', 1) || (int) $object->type === Facture::TYPE_CREDIT_NOTE) {
+			return 0;
+		}
+		$p = $this->db->prefix();
+		$id = (int) $object->id;
+		$res = $this->db->query('SELECT fk_multicurrency, multicurrency_code, multicurrency_tx FROM '.$p.'facture WHERE rowid = '.$id);
+		$inv = $res ? $this->db->fetch_object($res) : null;
+		$code = $inv ? strtoupper((string) $inv->multicurrency_code) : '';
+		if (!$inv || $code === '' || $code === 'HUF' || (float) $inv->multicurrency_tx <= 0) {
+			return 0;
+		}
+		$res = $this->db->query('SELECT SUM(CASE WHEN UPPER(vat_src_code) IN (\'KBAET\', \'KBAUK\') THEN 1 ELSE 0 END) AS kb, COUNT(*) AS n FROM '.$p.'facturedet WHERE fk_facture = '.$id.' AND product_type <> 9 AND (fk_remise_except IS NULL OR fk_remise_except = 0)');
+		$o = $res ? $this->db->fetch_object($res) : null;
+		$kbOnly = $o && (int) $o->n > 0 && (int) $o->kb === (int) $o->n;
+		$day = (!$kbOnly && !empty($object->date_pointoftax)) ? (int) $object->date_pointoftax : (int) $object->date;
+		if ($day <= 0) {
+			return 0;
+		}
+		list($tx, $rateDay) = $this->mnbRateForDay((int) $inv->fk_multicurrency, $code, $day);
+		if ($tx <= 0) {
+			$langs->load('navonline@navonline');
+			setEventMessages($langs->trans('NavOnlineRateNotFound', $code, dol_print_date($day, 'day')), null, 'warnings');
+			dol_syslog(__METHOD__.' invoice id='.$id.': no MNB '.$code.' rate for '.dol_print_date($day, 'day').', rate left as it is', LOG_WARNING);
+			return 0;
+		}
+		$old = (float) $inv->multicurrency_tx;
+		if (abs(round(1 / $tx, 6) - round(1 / $old, 6)) < 0.0000005) {
+			return 0;
+		}
+
+		require_once DOL_DOCUMENT_ROOT.'/core/lib/price.lib.php';
+		$sql = 'SELECT rowid, qty, remise_percent, tva_tx, localtax1_tx, localtax2_tx, info_bits, product_type, situation_percent, multicurrency_subprice';
+		$sql .= ' FROM '.$p.'facturedet WHERE fk_facture = '.$id.' AND product_type <> 9 AND (fk_remise_except IS NULL OR fk_remise_except = 0)';
+		$res = $this->db->query($sql);
+		if (!$res) {
+			return $this->softFail('rate: line lookup failed: '.$this->db->lasterror());
+		}
+		while ($l = $this->db->fetch_object($res)) {
+			$vat = (float) preg_replace('/\s*\(.*\)/', '', (string) $l->tva_tx);
+			$t = calcul_price_total($l->qty, 0, (float) $l->remise_percent, $vat, $l->localtax1_tx, $l->localtax2_tx, 0, 'HT', (int) $l->info_bits, (int) $l->product_type, $mysoc, array(), $l->situation_percent !== null ? (float) $l->situation_percent : 100, $tx, (float) $l->multicurrency_subprice);
+			$u = 'UPDATE '.$p.'facturedet SET subprice = '.price2num($t[3]).', total_ht = '.price2num($t[0]).', total_tva = '.price2num($t[1]);
+			$u .= ', total_localtax1 = '.price2num($t[9]).', total_localtax2 = '.price2num($t[10]).', total_ttc = '.price2num($t[2]);
+			$u .= ', multicurrency_total_ht = '.price2num($t[16]).', multicurrency_total_tva = '.price2num($t[17]).', multicurrency_total_ttc = '.price2num($t[18]);
+			$u .= ' WHERE rowid = '.((int) $l->rowid);
+			if (!$this->db->query($u)) {
+				return $this->softFail('rate: line update failed: '.$this->db->lasterror());
+			}
+		}
+		$sqlt = 'UPDATE '.$p.'facture f JOIN (SELECT fk_facture, SUM(total_ht) ht, SUM(total_tva) tva, SUM(total_ttc) ttc, SUM(multicurrency_total_ht) mht, SUM(multicurrency_total_tva) mtva, SUM(multicurrency_total_ttc) mttc';
+		$sqlt .= ' FROM '.$p.'facturedet WHERE fk_facture = '.$id.' GROUP BY fk_facture) t ON t.fk_facture = f.rowid';
+		$sqlt .= ' SET f.multicurrency_tx = '.((float) $tx).', f.total_ht = t.ht, f.total_tva = t.tva, f.total_ttc = t.ttc';
+		$sqlt .= ', f.multicurrency_total_ht = t.mht, f.multicurrency_total_tva = t.mtva, f.multicurrency_total_ttc = t.mttc WHERE f.rowid = '.$id;
+		if (!$this->db->query($sqlt)) {
+			return $this->softFail('rate: invoice update failed: '.$this->db->lasterror());
+		}
+		$object->multicurrency_tx = (float) $tx;
+		dol_syslog(__METHOD__.' invoice id='.$id.' '.$code.' rate '.round(1 / $old, 6).' -> '.round(1 / $tx, 6).' HUF (MNB '.$rateDay.', tax point '.dol_print_date($day, 'day').')');
+		return 1;
+	}
+
+	/**
+	 * MNB rate valid on a day: the rate of that day, else the last one published before it (at most 10 days back).
+	 * From llx_multicurrency_rate (synced by NavOnlineMnb); when missing there, read from MNB.
+	 *
+	 * @param int    $fkCurrency Multicurrency id
+	 * @param string $code       ISO code
+	 * @param int    $day        Timestamp of the day
+	 * @return array{0:float,1:string} Dolibarr rate (foreign units per 1 HUF, 0 if none) and the MNB day (Y-m-d)
+	 */
+	private function mnbRateForDay($fkCurrency, $code, $day)
+	{
+		$y = (int) dol_print_date($day, '%Y');
+		$m = (int) dol_print_date($day, '%m');
+		$d = (int) dol_print_date($day, '%d');
+		$end = dol_mktime(23, 59, 59, $m, $d, $y);
+		$from = dol_time_plus_duree($end, -10, 'd');
+		$sql = 'SELECT rate, date_sync FROM '.$this->db->prefix().'multicurrency_rate WHERE fk_multicurrency = '.((int) $fkCurrency);
+		$sql .= ' AND entity IN ('.getEntity('multicurrency').')';
+		$sql .= " AND date_sync <= '".$this->db->idate($end)."' AND date_sync > '".$this->db->idate($from)."' ORDER BY date_sync DESC LIMIT 1";
+		$res = $this->db->query($sql);
+		$o = $res ? $this->db->fetch_object($res) : null;
+		if ($o && (float) $o->rate > 0) {
+			// a rate synced for an earlier day: MNB may have published the rate of $day meanwhile, ask MNB only then
+			$syncDay = dol_print_date($this->db->jdate($o->date_sync), '%Y-%m-%d');
+			if ($syncDay === sprintf('%04d-%02d-%02d', $y, $m, $d)) {
+				return array((float) $o->rate, $syncDay);
+			}
+		}
+		dol_include_once('/navonline/class/navonlinemnb.class.php');
+		$mnb = new NavOnlineMnb($this->db);
+		$rates = $mnb->fetchMnb(dol_print_date($from, '%Y-%m-%d'), sprintf('%04d-%02d-%02d', $y, $m, $d), array($code));
+		if (is_array($rates) && $rates) {
+			krsort($rates);
+			foreach ($rates as $mnbDay => $list) {
+				if ($mnbDay <= sprintf('%04d-%02d-%02d', $y, $m, $d) && !empty($list[$code]) && (float) $list[$code] > 0) {
+					return array(1 / (float) $list[$code], (string) $mnbDay);
+				}
+			}
+		}
+		// MNB not reachable: the last synced rate before the day, if any
+		if ($o && (float) $o->rate > 0) {
+			return array((float) $o->rate, dol_print_date($this->db->jdate($o->date_sync), '%Y-%m-%d'));
+		}
+		return array(0.0, '');
 	}
 
 	/**

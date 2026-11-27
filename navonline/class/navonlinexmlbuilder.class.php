@@ -93,6 +93,9 @@ class NavOnlineXmlBuilder
 	/** @var bool */
 	private $foreignCurrency = false;
 
+	/** @var string customerVatStatus of the last build (DOMESTIC, OTHER, PRIVATE_PERSON) */
+	private $customerVatStatus = '';
+
 	/** @var bool The invoice of the last build is a credit note of a deposit invoice (its lines are advance lines) */
 	private $creditOfDeposit = false;
 
@@ -284,6 +287,7 @@ class NavOnlineXmlBuilder
 	 */
 	private function buildCustomer($x, $soc)
 	{
+		$this->customerVatStatus = '';
 		if (!$soc) {
 			$this->errors[] = 'Customer not loaded';
 			return;
@@ -292,6 +296,7 @@ class NavOnlineXmlBuilder
 		$kb = navonlineIntraCommunityBuyerError($soc);
 		$this->customerKbError = $kb[0] === '' ? '' : $kb[0].($kb[1] !== '' ? ' '.$kb[1] : '').($kb[2] !== '' ? ' '.$kb[2] : '');
 		if (isset($soc->typent_code) && $soc->typent_code === 'TE_PRIVATE') {
+			$this->customerVatStatus = 'PRIVATE_PERSON';
 			$this->add($x, 'customerVatStatus', 'PRIVATE_PERSON');
 			return;
 		}
@@ -301,9 +306,19 @@ class NavOnlineXmlBuilder
 			$tax = $this->getHuTaxNumber($soc);
 			$this->customerVatCode = (string) ($tax['vatCode'] ?? '');
 			if (!$tax) {
-				$this->errors[] = 'Customer "'.$soc->name.'": Hungarian tax number (Prof Id 1) is missing or invalid; set the third party type to "Private individual" for a private person';
+				// NAV spec 2.1.4 case 7: a domestic organisation that is not a VAT subject and has no tax number (not a
+				// private person) is OTHER without any customerVatData; marked on the third party (navonline_nonvat)
+				if (!empty($soc->array_options['options_navonline_nonvat'])) {
+					$this->customerVatStatus = 'OTHER';
+					$this->add($x, 'customerVatStatus', 'OTHER');
+					$this->add($x, 'customerName', $this->text($soc->name, 512), 'Customer: name is empty');
+					$this->buildAddress($x->addChild('customerAddress'), $soc, 'Customer');
+					return;
+				}
+				$this->errors[] = 'Customer "'.$soc->name.'": Hungarian tax number (Prof Id 1) is missing or invalid; set the third party type to "Private individual" for a private person, or tick "Not a VAT subject (no tax number)" for an organisation without tax number';
 				return;
 			}
+			$this->customerVatStatus = 'DOMESTIC';
 			$this->add($x, 'customerVatStatus', 'DOMESTIC');
 			$group = $this->getHuGroupTaxNumber($soc, 'Customer "'.$soc->name.'"');
 			if ($group) {
@@ -321,12 +336,15 @@ class NavOnlineXmlBuilder
 				$this->addTaxNumber($x->addChild('customerVatData')->addChild('customerTaxNumber'), $tax);
 			}
 		} else {
+			$this->customerVatStatus = 'OTHER';
 			$this->add($x, 'customerVatStatus', 'OTHER');
 			$vatIntra = strtoupper(str_replace(array(' ', '-', '.'), '', (string) $soc->tva_intra));
 			$isEu = function_exists('isInEEC') ? isInEEC($soc) : false;
 			if ($isEu && preg_match('/^[A-Z]{2}[0-9A-Z]{2,13}$/', $vatIntra)) {
 				$this->add($x->addChild('customerVatData'), 'communityVatNumber', $vatIntra);
-			} else {
+			} elseif (!$isEu) {
+				// thirdStateTaxId is for a party established in a third country only (NAV spec 2.1.4 case 6); an EU
+				// customer without a valid community VAT number gets no customerVatData (case 5 / 7)
 				$thirdStateId = $vatIntra !== '' ? $vatIntra : trim((string) $soc->idprof1);
 				if ($thirdStateId !== '') {
 					$this->add($x->addChild('customerVatData'), 'thirdStateTaxId', $this->text($thirdStateId, 50));
@@ -610,6 +628,10 @@ class NavOnlineXmlBuilder
 			if ($this->customerVatCode === '1') {
 				$this->errors[] = $label.': domestic reverse charge (FAD) to a subject-exempt customer (VAT code 1 in its tax number)';
 			}
+			// NAV: domestic reverse charge only to a domestic VAT subject (customerVatStatus DOMESTIC)
+			if ($this->customerVatStatus !== 'DOMESTIC') {
+				$this->errors[] = $label.': domestic reverse charge (FAD) needs a Hungarian VAT subject customer with tax number';
+			}
 			return array('type' => 'vatDomesticReverseCharge', 'key' => '3_DRC');
 		}
 
@@ -690,6 +712,9 @@ class NavOnlineXmlBuilder
 		$zip = strtoupper(trim((string) $soc->zip));
 		if (!preg_match('/^[A-Z0-9][A-Z0-9\s\-]{1,8}$/', $zip)) {
 			$this->errors[] = $prefix.': postal code "'.$zip.'" is missing or invalid';
+		} elseif ($country === 'HU' && !preg_match('/^[1-9][0-9]{3}$/', $zip)) {
+			// Hungarian postal codes are 4 digits; NAV checks them against its postal code register
+			$this->errors[] = $prefix.': Hungarian postal code "'.$zip.'" must be 4 digits';
 		}
 		$this->add($xs, 'base:postalCode', $zip, null, self::NS_BASE);
 		$this->add($xs, 'base:city', $this->text($soc->town, 255), $prefix.': town is empty', self::NS_BASE);

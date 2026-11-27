@@ -452,6 +452,14 @@ class NavOnlineSender
 			if ($navStatus === 'DONE') {
 				$status = self::STATUS_DONE;
 				$finalized++;
+				// Accepted with NAV warnings: often a wrong data (customer tax number, date...) that needs a modifying
+				// invoice, so it is alerted like a refusal (the local 'WARN LOCAL_' notes of the module are not)
+				$navWarn = array_filter(explode("\n", self::collectMessages($result)), function ($l) {
+					return strpos($l, 'WARN') === 0;
+				});
+				if ($navWarn) {
+					$this->addAlert($row, 'NAV befogadta, de figyelmeztetéssel (ellenőrizd, kell-e módosító számla): '.implode(' | ', $navWarn));
+				}
 			} elseif ($navStatus === 'ABORTED') {
 				$status = self::STATUS_ERROR;
 				$finalized++;

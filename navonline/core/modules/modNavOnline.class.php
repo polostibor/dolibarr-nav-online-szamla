@@ -267,6 +267,8 @@ class modNavOnline extends DolibarrModules
 		// Customer invoice: proof of exit of an export (EAM): MRN of the export declaration(s), date of exit (export_proof.php)
 		$extrafields->addExtraField('navonline_export_mrn', 'NavOnlineExtraExportMrn', 'varchar', 100, '255', 'facture', 0, 0, '', '', 1, '', '1', 'NavOnlineExtraExportMrnHelp', '', '0', 'navonline@navonline', 'isModEnabled("navonline")', 0, 0);
 		$extrafields->addExtraField('navonline_exit_date', 'NavOnlineExtraExitDate', 'date', 101, '', 'facture', 0, 0, '', '', 1, '', '1', 'NavOnlineExtraExitDateHelp', '', '0', 'navonline@navonline', 'isModEnabled("navonline")', 0, 0);
+		// Third party: domestic organisation that is not a VAT subject and has no tax number (NAV customerVatStatus OTHER)
+		$extrafields->addExtraField('navonline_nonvat', 'NavOnlineExtraNonVat', 'boolean', 100, '', 'societe', 0, 0, '', '', 1, '', '1', 'NavOnlineExtraNonVatHelp', '', '0', 'navonline@navonline', 'isModEnabled("navonline")');
 		$extrafields->addExtraField('navonline_pallet_kg', 'NavOnlineExtraPalletKg', 'double', 101, '24,4', 'expedition', 0, 0, '', '', 1, '', '1', 'Üresen: '.getDolGlobalString('NAVONLINE_PALLET_WEIGHT_KG', '25').' kg (NAVONLINE_PALLET_WEIGHT_KG)', '', '0', 'navonline@navonline', 'isModEnabled("navonline")');
 
 		$sql = array();
