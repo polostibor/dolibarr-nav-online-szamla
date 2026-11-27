@@ -79,6 +79,13 @@ Ez a tároló a Dolibarr `htdocs/custom` mappájának tartalma. Két modult tart
 
 11. **Mentes modul (opcionális).** Hozz létre egy Windows ütemezett feladatot a mentő szkripttel (alapnév: `Dolibarr mentes`; más név a `MENTES_TASK_NAME` állandóval adható meg), majd kapcsold be a modult. Kijelentkezéskor a modul a `schtasks /Run` paranccsal indítja a feladatot, a kijelentkezést nem lassítja.
 
+### Bankkivonat importálása
+
+*Bank → Bankkivonat importálása*: a bank havi kivonata (camt.053 XML) vagy a számlatörténet (XML) feltölthető. A bankszámlát a modul a fájlból ismeri fel, és ugyanaz a tétel akkor sem kerül be kétszer, ha mindkét fájlt beolvasod.
+
+- A tételeket a modul a Dolibarrban már rögzített banki tételekkel párosítja: azonos összeg, ±10 nap, és ha egyértelmű, a partner bankszámlaszáma vagy a közleményben szereplő számlaszám alapján. A havi kivonat a párosított tételeket a kivonatszámmal egyeztetettnek is jelöli, és ellenőrzi a nyitó- és záróegyenleget.
+- A párosítatlan tételeknél (bankköltség, kártyás vásárlás, saját számlák közötti átvezetés) a felkínált rögzítést tételenként te hagyod jóvá.
+
 ### Élesítés előtt
 
 - Előbb a **tesztkörnyezetben** (`https://api-test.onlineszamla.nav.gov.hu/invoiceService/v3`) ellenőrizd a beküldést.
@@ -161,6 +168,13 @@ This repository holds the contents of Dolibarr's `htdocs/custom` folder. It cont
 10. **PDF templates.** Under *Setup → Modules → Invoices / Proposals / Orders …*, select the Hungarian templates (e.g. `sponge_hu`, `cyan_hu`, `espadon_hu`).
 
 11. **Mentes module (optional).** Create a Windows scheduled task that runs your backup script. Its default name is `Dolibarr mentes`; you can set a different name with the `MENTES_TASK_NAME` constant. Then enable the module. At logout, the module starts the task with `schtasks /Run`, so logging out doesn't take longer.
+
+### Bank statement import
+
+*Bank → Bank statement import*: you can upload the bank's monthly statement (camt.053 XML) or the account history (XML). The module recognises the bank account from the file. An entry is never imported twice, even if you import both files.
+
+- The module pairs the entries with the bank lines already recorded in Dolibarr: same amount, within ±10 days, and when it's clear-cut, the partner's bank account number or the invoice number in the remittance text. A monthly statement also marks the paired entries as reconciled with the statement number, and it checks the opening and closing balances.
+- For entries that can't be paired (bank charges, card purchases, transfers between your own accounts), the module offers a booking, and you approve each one.
 
 ### Before going live
 

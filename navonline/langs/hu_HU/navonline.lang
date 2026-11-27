@@ -342,3 +342,5 @@ NavOnlineRateNotFound = Nem található MNB-árfolyam (%s, %s): a számla árfol
 # Szállítói jóváírás (NAV-ból rögzített) felhasználása az eredeti számlán
 NavOnlineSupplierCreditApplied = A(z) %s szállítói jóváírás (%s Ft) levonva a(z) %s számla tartozásából; fennmaradó tartozás: %s Ft.
 NavOnlineSupplierCreditNotApplied = A(z) %s szállítói jóváírás (%s Ft) nagyobb, mint a(z) %s számla fennmaradó tartozása (%s Ft), mert az eredetit már (részben) kifizették: a szállító visszautalással tartozik. A jóváírást kézzel kezeld (visszatérítés rögzítése vagy kedvezménnyé alakítás).
+# Bankkivonat-import / bank statement import
+NavOnlineBankImportMenu = Bankkivonat importálása

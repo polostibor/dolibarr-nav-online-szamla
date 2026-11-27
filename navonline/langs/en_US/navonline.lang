@@ -342,3 +342,5 @@ NavOnlineRateNotFound = No MNB exchange rate found (%s, %s): the rate of the inv
 # Supplier credit note (recorded from NAV) used on the original invoice
 NavOnlineSupplierCreditApplied = Supplier credit note %s (%s HUF) was deducted from what is still owed on invoice %s; still owed: %s HUF.
 NavOnlineSupplierCreditNotApplied = Supplier credit note %s (%s HUF) is larger than what is still owed on invoice %s (%s HUF), because the original was already (partly) paid: the supplier owes a refund. Handle the credit note by hand (record the refund or convert it into a discount).
+# Bankkivonat-import / bank statement import
+NavOnlineBankImportMenu = Bank statement import

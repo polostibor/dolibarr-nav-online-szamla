@@ -244,6 +244,22 @@ class modNavOnline extends DolibarrModules
 			'target' => '',
 			'user' => 0,
 		);
+		// Bank > Bank statement import (camt.053 statement / account history)
+		$this->menu[$r++] = array(
+			'fk_menu' => 'fk_mainmenu=bank,fk_leftmenu=bank',
+			'type' => 'left',
+			'titre' => 'NavOnlineBankImportMenu',
+			'prefix' => img_picto('', 'bank_account', 'class="paddingright pictofixedwidth"'),
+			'mainmenu' => 'bank',
+			'leftmenu' => 'navonline_bankimport',
+			'url' => '/navonline/bankimport.php',
+			'langs' => 'navonline@navonline',
+			'position' => 1310,
+			'enabled' => 'isModEnabled("navonline") && isModEnabled("bank")',
+			'perms' => '$user->hasRight("banque", "lire")',
+			'target' => '',
+			'user' => 0,
+		);
 	}
 
 	/**
